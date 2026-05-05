@@ -22,6 +22,11 @@ class Settings:
         self.systemFromEmail = os.getenv("SYSTEM_FROM_EMAIL", "")
         self.systemEmailPassword = os.getenv("SYSTEM_EMAIL_PASSWORD", "")
         self.appBaseUrl = os.getenv("APP_BASE_URL", "http://localhost:5173")
+        self.seedDefaultUsers = os.getenv("SEED_DEFAULT_USERS", "false").lower() == "true"
+        self.defaultAdminEmail = os.getenv("DEFAULT_ADMIN_EMAIL", "")
+        self.defaultAdminPassword = os.getenv("DEFAULT_ADMIN_PASSWORD", "")
+        self.defaultUserEmail = os.getenv("DEFAULT_USER_EMAIL", "")
+        self.defaultUserPassword = os.getenv("DEFAULT_USER_PASSWORD", "")
         self.corsOrigins = [
             origin.strip()
             for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")

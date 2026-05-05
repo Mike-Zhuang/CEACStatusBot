@@ -86,7 +86,8 @@ def runDueCases() -> None:
 @app.on_event("startup")
 def onStartup() -> None:
     initializeDatabase()
-    seedDefaultUsers()
+    if settings.seedDefaultUsers:
+        seedDefaultUsers()
     if not scheduler.running:
         scheduler.add_job(runDueCases, "interval", minutes=1, id="run-due-cases", replace_existing=True)
         scheduler.start()

@@ -106,10 +106,12 @@ def requireAdmin(request: Request) -> dict[str, Any]:
 
 def seedDefaultUsers() -> None:
     now = utcNowIso()
-    defaults = [
-        ("admin@ceac.local", "Admin@123456", "admin"),
-        ("user@ceac.local", "User@123456", "user"),
-    ]
+    settings = getSettings()
+    defaults = []
+    if settings.defaultAdminEmail and settings.defaultAdminPassword:
+        defaults.append((settings.defaultAdminEmail, settings.defaultAdminPassword, "admin"))
+    if settings.defaultUserEmail and settings.defaultUserPassword:
+        defaults.append((settings.defaultUserEmail, settings.defaultUserPassword, "user"))
     with getConnection() as connection:
         for email, password, role in defaults:
             exists = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
@@ -122,4 +124,3 @@ def seedDefaultUsers() -> None:
                 """,
                 (email, hashPassword(password), role, now, now),
             )
-
