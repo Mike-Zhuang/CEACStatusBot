@@ -7,6 +7,8 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerifyMismatchError, VerificationError
 from fastapi import HTTPException, Request, Response, status
 
 from .config import getSettings
@@ -14,23 +16,48 @@ from .database import getConnection, utcNowIso
 
 
 SESSION_COOKIE_NAME = "ceac_session"
+PASSWORD_HASHER = PasswordHasher(
+    time_cost=3,
+    memory_cost=65536,
+    parallelism=4,
+    hash_len=32,
+    salt_len=16,
+)
 
 
-def hashPassword(password: str, salt: str | None = None) -> str:
+def hashLegacyPassword(password: str, salt: str | None = None) -> str:
     salt = salt or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 210_000)
     return f"pbkdf2_sha256${salt}${base64.b64encode(digest).decode()}"
 
 
+def hashPassword(password: str) -> str:
+    return f"argon2id${PASSWORD_HASHER.hash(password)}"
+
+
 def verifyPassword(password: str, storedHash: str) -> bool:
+    if storedHash.startswith("argon2id$"):
+        try:
+            return PASSWORD_HASHER.verify(storedHash.removeprefix("argon2id$"), password)
+        except (InvalidHashError, VerificationError, VerifyMismatchError):
+            return False
     try:
         algorithm, salt, digest = storedHash.split("$", 2)
     except ValueError:
         return False
     if algorithm != "pbkdf2_sha256":
         return False
-    candidate = hashPassword(password, salt).split("$", 2)[2]
+    candidate = hashLegacyPassword(password, salt).split("$", 2)[2]
     return hmac.compare_digest(candidate, digest)
+
+
+def needsPasswordRehash(storedHash: str) -> bool:
+    if not storedHash.startswith("argon2id$"):
+        return True
+    try:
+        return PASSWORD_HASHER.check_needs_rehash(storedHash.removeprefix("argon2id$"))
+    except (InvalidHashError, VerificationError):
+        return True
 
 
 def hashCode(code: str) -> str:

@@ -4,21 +4,9 @@ from email.mime.text import MIMEText
 from smtplib import SMTP, SMTP_SSL
 from typing import Any
 
-from cryptography.fernet import InvalidToken
-
 from .config import getSettings
 from .database import getConnection, utcNowIso
-
-
-def encryptSecret(value: str) -> str:
-    return getSettings().getFernet().encrypt(value.encode()).decode()
-
-
-def decryptSecret(value: str) -> str:
-    try:
-        return getSettings().getFernet().decrypt(value.encode()).decode()
-    except InvalidToken as exc:
-        raise RuntimeError("SMTP password cannot be decrypted; check ENCRYPTION_KEY") from exc
+from .secrets import decryptSecret, encryptSecret
 
 
 def sendEmail(

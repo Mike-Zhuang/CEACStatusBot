@@ -138,6 +138,23 @@ def initializeDatabase() -> None:
                 FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE CASCADE,
                 FOREIGN KEY (status_id) REFERENCES status_catalog(id)
             );
+
+            CREATE TABLE IF NOT EXISTS query_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id INTEGER NOT NULL,
+                trigger_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                locked_at TEXT,
+                locked_by TEXT,
+                started_at TEXT,
+                finished_at TEXT,
+                error_message TEXT NOT NULL DEFAULT '',
+                result_json TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE CASCADE
+            );
             """
         )
         columns = {
@@ -159,6 +176,14 @@ def initializeDatabase() -> None:
         if "trigger_type" not in queryRunColumns:
             connection.execute(
                 "ALTER TABLE query_runs ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'unknown'",
+            )
+        queryJobColumns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(query_jobs)").fetchall()
+        }
+        if "result_json" not in queryJobColumns:
+            connection.execute(
+                "ALTER TABLE query_jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT ''",
             )
 
 

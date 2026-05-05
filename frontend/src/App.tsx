@@ -73,6 +73,24 @@ interface QueryRun {
   duration_ms: number;
 }
 
+interface QueryJob {
+  id: number;
+  caseId: number;
+  triggerType: "manual" | "automatic";
+  status: "queued" | "running" | "succeeded" | "failed";
+  attempts: number;
+  errorMessage: string;
+  result: {
+    success: boolean;
+    changed: boolean;
+    error: string;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
 interface AdminUser {
   id: number;
   email: string;
@@ -706,13 +724,31 @@ export function App() {
     setIsBusy(true);
     setMessage(t("queryInProgress"));
     try {
-      const payload = await requestJson<{ success: boolean; changed: boolean; error: string }>(`/api/cases/${caseId}/test-query`, {
+      const payload = await requestJson<{ jobId: number; status: QueryJob["status"] }>(`/api/cases/${caseId}/test-query`, {
         method: "POST",
         body: "{}",
       });
+      let job: QueryJob | null = null;
+      for (let index = 0; index < 60; index += 1) {
+        const jobPayload = await requestJson<{ job: QueryJob }>(`/api/query-jobs/${payload.jobId}`);
+        job = jobPayload.job;
+        if (job.status === "succeeded" || job.status === "failed") {
+          break;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
       await loadCases();
       await loadHistory(caseId);
-      setMessage(payload.success ? (payload.changed ? t("fastQueryChanged") : t("fastQueryUnchanged")) : payload.error);
+      if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
+        setMessage(t("queryInProgress"));
+        return;
+      }
+      const result = job.result;
+      setMessage(
+        result?.success
+          ? (result.changed ? t("fastQueryChanged") : t("fastQueryUnchanged"))
+          : (job.errorMessage || result?.error || t("requestFailed")),
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {

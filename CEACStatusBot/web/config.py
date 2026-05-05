@@ -15,6 +15,7 @@ class Settings:
     def __init__(self) -> None:
         self.databasePath = Path(os.getenv("DATABASE_PATH", "ceacstatusbot.sqlite3"))
         self.secretKey = os.getenv("SECRET_KEY", "change-this-secret-before-public-deploy")
+        self.credentialKeyFile = os.getenv("CREDENTIAL_KEY_FILE", "")
         self.encryptionKey = os.getenv("ENCRYPTION_KEY", "")
         self.systemSmtpHost = os.getenv("SYSTEM_SMTP_HOST", "smtp.exmail.qq.com")
         self.systemSmtpPort = int(os.getenv("SYSTEM_SMTP_PORT", "465"))
@@ -32,6 +33,15 @@ class Settings:
             for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
             if origin.strip()
         ]
+        self.csrfTrustedOrigins = [
+            origin.strip().rstrip("/")
+            for origin in os.getenv(
+                "CSRF_TRUSTED_ORIGINS",
+                "http://localhost:5173,http://127.0.0.1:5173",
+            ).split(",")
+            if origin.strip()
+        ]
+        self.workerPollIntervalSeconds = max(1, int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "3")))
 
     def getFernet(self) -> Fernet:
         key = self.encryptionKey

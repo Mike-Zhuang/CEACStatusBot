@@ -1,18 +1,23 @@
 from datetime import UTC, datetime, timedelta
 import secrets
+from urllib.parse import urlparse
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .case_service import (
     createCase,
     deleteCase,
+    enqueueCaseQuery,
+    enqueueDueCases,
     getCase,
+    getQueryJob,
     listCases,
     listHistory,
+    migrateEncryptedFields,
     patchCase,
-    runCaseQuery,
     sendCurrentStatusEmail,
 )
 from .config import getSettings
@@ -34,11 +39,13 @@ from .security import (
     getCurrentUser,
     hashCode,
     hashPassword,
+    needsPasswordRehash,
     requireAdmin,
     seedDefaultUsers,
     setSessionCookie,
     verifyPassword,
 )
+from .secrets import decryptIfNeeded, getCredentialMasterKey
 
 
 app = FastAPI(title="CEACStatusBot Web", version="1.0.0")
@@ -54,6 +61,29 @@ app.add_middleware(
 )
 
 
+def requestOrigin(request: Request) -> str:
+    origin = request.headers.get("origin")
+    if origin:
+        return origin.rstrip("/")
+    referer = request.headers.get("referer")
+    if not referer:
+        return ""
+    parsed = urlparse(referer)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
+@app.middleware("http")
+async def csrfOriginGuard(request: Request, callNext):
+    unsafeMethods = {"POST", "PATCH", "PUT", "DELETE"}
+    if request.method in unsafeMethods and request.url.path.startswith("/api/"):
+        origin = requestOrigin(request)
+        if origin not in settings.csrfTrustedOrigins:
+            return JSONResponse({"detail": "Forbidden origin"}, status_code=status.HTTP_403_FORBIDDEN)
+    return await callNext(request)
+
+
 def currentUserDependency(request: Request) -> dict:
     return getCurrentUser(request)
 
@@ -62,30 +92,29 @@ def adminDependency(request: Request) -> dict:
     return requireAdmin(request)
 
 
-def runDueCases() -> None:
-    nowIso = datetime.now(UTC).replace(microsecond=0).isoformat()
-    with getConnection() as connection:
-        rows = connection.execute(
-            """
-            SELECT id FROM ceac_cases
-            WHERE is_enabled = 1
-              AND next_check_at IS NOT NULL
-              AND next_check_at <= ?
-            ORDER BY next_check_at ASC
-            LIMIT 20
-            """,
-            (nowIso,),
-        ).fetchall()
+def listCasesForQueryRuns(rows: list[dict]) -> list[dict]:
+    runs: list[dict] = []
     for row in rows:
-        try:
-            runCaseQuery(int(row["id"]), triggerType="automatic")
-        except Exception as exc:
-            print(f"[scheduler] case {row['id']} failed: {exc}")
+        item = dict(row)
+        item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
+        runs.append(item)
+    return runs
+
+
+def runDueCases() -> None:
+    try:
+        queued = enqueueDueCases()
+        if queued:
+            print(f"[scheduler] queued {len(queued)} CEAC query job(s)")
+    except Exception as exc:
+        print(f"[scheduler] enqueue failed: {exc}")
 
 
 @app.on_event("startup")
 def onStartup() -> None:
+    getCredentialMasterKey()
     initializeDatabase()
+    migrateEncryptedFields()
     if settings.seedDefaultUsers:
         seedDefaultUsers()
     if not scheduler.running:
@@ -224,6 +253,12 @@ def login(payload: LoginRequest, response: Response) -> dict:
         user = connection.execute("SELECT * FROM users WHERE email = ?", (payload.email,)).fetchone()
     if not user or not verifyPassword(payload.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误")
+    if needsPasswordRehash(user["password_hash"]):
+        with getConnection() as connection:
+            connection.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+                (hashPassword(payload.password), utcNowIso(), user["id"]),
+            )
     publicUser = {
         "id": user["id"],
         "email": user["email"],
@@ -258,7 +293,11 @@ def updateMe(payload: ProfileUpdateRequest, response: Response, user: dict = Dep
             exists = connection.execute("SELECT id FROM users WHERE email = ? AND id != ?", (nextEmail, user["id"])).fetchone()
             if exists:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该邮箱已被使用")
-        nextPasswordHash = hashPassword(payload.newPassword) if payload.newPassword else privateUser["password_hash"]
+        nextPasswordHash = (
+            hashPassword(payload.newPassword)
+            if payload.newPassword
+            else hashPassword(payload.currentPassword) if needsPasswordRehash(privateUser["password_hash"]) else privateUser["password_hash"]
+        )
         connection.execute(
             """
             UPDATE users
@@ -309,9 +348,18 @@ def apiHistory(caseId: int, user: dict = Depends(currentUserDependency)) -> dict
 
 @app.post("/api/cases/{caseId}/test-query")
 def apiTestQuery(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
-    if not getCase(caseId, int(user["id"])):
+    job = enqueueCaseQuery(caseId, "manual", int(user["id"]))
+    if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="签证档案不存在")
-    return runCaseQuery(caseId, triggerType="manual")
+    return {"jobId": job["id"], "status": job["status"]}
+
+
+@app.get("/api/query-jobs/{jobId}")
+def apiQueryJob(jobId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    job = getQueryJob(jobId, int(user["id"]))
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="查询任务不存在")
+    return {"job": job}
 
 
 @app.post("/api/cases/{caseId}/test-email")
@@ -371,7 +419,7 @@ def adminQueryRuns(_: dict = Depends(adminDependency)) -> dict:
             LIMIT 200
             """,
         ).fetchall()
-    return {"runs": rows}
+    return {"runs": listCasesForQueryRuns(rows)}
 
 
 @app.get("/api/admin/system-email")

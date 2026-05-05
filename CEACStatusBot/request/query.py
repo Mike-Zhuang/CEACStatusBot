@@ -1,8 +1,21 @@
 import requests
 from bs4 import BeautifulSoup
 import time
+from urllib.parse import urljoin, urlparse
 
 from CEACStatusBot.captcha import CaptchaHandle, OnnxCaptchaHandle
+
+
+ROOT = "https://ceac.state.gov"
+REQUEST_TIMEOUT = (10, 45)
+
+
+def build_ceac_url(path: str) -> str:
+    url = urljoin(ROOT, path)
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "ceac.state.gov":
+        raise ValueError("Unexpected CEAC request target")
+    return url
 
 def query_status(location, application_num, passport_number, surname, captchaHandle: CaptchaHandle = OnnxCaptchaHandle("captcha.onnx")):
     failCount = 0
@@ -27,10 +40,13 @@ def query_status(location, application_num, passport_number, surname, captchaHan
         }
 
         session = requests.Session()
-        ROOT = "https://ceac.state.gov"
 
         try:
-            r = session.get(url=f"{ROOT}/ceacstattracker/status.aspx?App=NIV", headers=headers)
+            r = session.get(
+                url=build_ceac_url("/ceacstattracker/status.aspx?App=NIV"),
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
         except Exception as e:
             print(e)
             continue
@@ -39,8 +55,8 @@ def query_status(location, application_num, passport_number, surname, captchaHan
 
         # Find captcha image
         captcha = soup.find(name="img", id="c_status_ctl00_contentplaceholder1_defaultcaptcha_CaptchaImage")
-        image_url = ROOT + captcha["src"]
-        img_resp = session.get(image_url)
+        image_url = build_ceac_url(captcha["src"])
+        img_resp = session.get(image_url, timeout=REQUEST_TIMEOUT)
 
         # Resolve captcha
         captcha_num = captchaHandle.solve(img_resp.content)
@@ -93,7 +109,12 @@ def query_status(location, application_num, passport_number, surname, captchaHan
             update_from_current_page(soup, field, data)
 
         try:
-            r = session.post(url=f"{ROOT}/ceacstattracker/status.aspx", headers=headers, data=data)
+            r = session.post(
+                url=build_ceac_url("/ceacstattracker/status.aspx"),
+                headers=headers,
+                data=data,
+                timeout=REQUEST_TIMEOUT,
+            )
         except Exception as e:
             print(e)
             continue

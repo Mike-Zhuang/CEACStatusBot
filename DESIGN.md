@@ -18,6 +18,17 @@ The page rhythm is **dense product screenshots** — Linear's marketing leads wi
 - **Product UI screenshots** dominate the page. The marketing chrome is a dark frame for the app.
 - No second chromatic color. No atmospheric gradients. No spotlight cards.
 
+## CEACStatusBot Brand Icon
+
+CEACStatusBot uses `frontend/public/favicon.svg` as the browser favicon and compact brand mark. The icon is a dark rounded square with a lavender-blue open `C` trajectory and a small green status point, communicating CEAC monitoring without adding a decorative illustration system.
+
+Implementation rules:
+
+- Use the SVG directly for favicon and compact product chrome.
+- Keep the icon on dark or neutral surfaces; do not place it inside an extra card or badge.
+- Do not generate multiple logo variants unless a real deployment surface requires one.
+- Do not embed production secrets, account identifiers, or environment names in visual assets.
+
 ## Colors
 
 > Source pages: linear.app (home), /intake, /pricing, /contact/sales, /build.
