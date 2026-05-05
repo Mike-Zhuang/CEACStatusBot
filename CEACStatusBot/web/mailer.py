@@ -7,6 +7,7 @@ from typing import Any
 from cryptography.fernet import InvalidToken
 
 from .config import getSettings
+from .database import getConnection, utcNowIso
 
 
 def encryptSecret(value: str) -> str:
@@ -51,20 +52,88 @@ def sendEmail(
 
 
 def sendSystemEmail(toEmail: str, subject: str, body: str) -> None:
-    settings = getSettings()
-    if not settings.systemFromEmail or not settings.systemEmailPassword:
+    config = getSystemSmtpConfig()
+    if not config["fromEmail"] or not config["password"]:
         print(f"[mail] System email is not configured. Subject: {subject}, To: {toEmail}")
         return
     sendEmail(
-        fromEmail=settings.systemFromEmail,
+        fromEmail=config["fromEmail"],
         toEmail=toEmail,
-        password=settings.systemEmailPassword,
-        host=settings.systemSmtpHost,
-        port=settings.systemSmtpPort,
-        useSsl=settings.systemSmtpUseSsl,
+        password=config["password"],
+        host=config["host"],
+        port=config["port"],
+        useSsl=config["useSsl"],
         subject=subject,
         body=body,
     )
+
+
+def getSystemSmtpConfig() -> dict[str, Any]:
+    settings = getSettings()
+    with getConnection() as connection:
+        row = connection.execute("SELECT * FROM system_smtp_config WHERE id = 1").fetchone()
+    if row:
+        return {
+            "fromEmail": row["from_email"],
+            "host": row["host"],
+            "port": int(row["port"]),
+            "useSsl": bool(row["use_ssl"]),
+            "password": decryptSecret(row["password_encrypted"]),
+            "source": "database",
+            "isConfigured": True,
+        }
+    return {
+        "fromEmail": settings.systemFromEmail,
+        "host": settings.systemSmtpHost,
+        "port": settings.systemSmtpPort,
+        "useSsl": settings.systemSmtpUseSsl,
+        "password": settings.systemEmailPassword,
+        "source": "environment",
+        "isConfigured": bool(settings.systemFromEmail and settings.systemEmailPassword),
+    }
+
+
+def getSystemSmtpConfigPublic() -> dict[str, Any]:
+    config = getSystemSmtpConfig()
+    return {
+        "fromEmail": config["fromEmail"],
+        "host": config["host"],
+        "port": config["port"],
+        "useSsl": config["useSsl"],
+        "source": config["source"],
+        "isConfigured": config["isConfigured"],
+        "hasPassword": bool(config["password"]),
+    }
+
+
+def saveSystemSmtpConfig(*, fromEmail: str, host: str, port: int, useSsl: bool, password: str | None) -> dict[str, Any]:
+    now = utcNowIso()
+    with getConnection() as connection:
+        current = connection.execute("SELECT password_encrypted FROM system_smtp_config WHERE id = 1").fetchone()
+        if password:
+            passwordEncrypted = encryptSecret(password)
+        elif current:
+            passwordEncrypted = current["password_encrypted"]
+        else:
+            settings = getSettings()
+            if not settings.systemEmailPassword:
+                raise RuntimeError("System SMTP password is required")
+            passwordEncrypted = encryptSecret(settings.systemEmailPassword)
+        connection.execute(
+            """
+            INSERT INTO system_smtp_config (id, from_email, host, port, use_ssl, password_encrypted, created_at, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                from_email = excluded.from_email,
+                host = excluded.host,
+                port = excluded.port,
+                use_ssl = excluded.use_ssl,
+                password_encrypted = excluded.password_encrypted,
+                updated_at = excluded.updated_at
+            """,
+            (fromEmail, host, port, int(useSsl), passwordEncrypted, now, now),
+        )
+    return getSystemSmtpConfigPublic()
 
 
 def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, result: dict[str, Any]) -> None:
@@ -93,4 +162,3 @@ def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None
         )
         return
     sendSystemEmail(case["receive_email"], subject, body)
-

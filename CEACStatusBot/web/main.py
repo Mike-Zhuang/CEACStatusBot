@@ -17,8 +17,16 @@ from .case_service import (
 )
 from .config import getSettings
 from .database import getConnection, initializeDatabase, utcNowIso
-from .mailer import sendSystemEmail
-from .schemas import CeacCaseInput, CeacCasePatch, LoginRequest, RegisterRequest, SendCodeRequest
+from .mailer import getSystemSmtpConfigPublic, saveSystemSmtpConfig, sendSystemEmail
+from .schemas import (
+    CeacCaseInput,
+    CeacCasePatch,
+    LoginRequest,
+    ProfileUpdateRequest,
+    RegisterRequest,
+    SendCodeRequest,
+    SystemSmtpConfigInput,
+)
 from .security import (
     clearSessionCookie,
     getCurrentUser,
@@ -182,6 +190,35 @@ def me(user: dict = Depends(currentUserDependency)) -> dict:
     return {"user": user}
 
 
+@app.patch("/api/me")
+def updateMe(payload: ProfileUpdateRequest, response: Response, user: dict = Depends(currentUserDependency)) -> dict:
+    nowIso = utcNowIso()
+    with getConnection() as connection:
+        privateUser = connection.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
+        if not privateUser or not verifyPassword(payload.currentPassword, privateUser["password_hash"]):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码错误")
+        nextEmail = payload.email.strip() if payload.email else privateUser["email"]
+        if nextEmail != privateUser["email"]:
+            exists = connection.execute("SELECT id FROM users WHERE email = ? AND id != ?", (nextEmail, user["id"])).fetchone()
+            if exists:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该邮箱已被使用")
+        nextPasswordHash = hashPassword(payload.newPassword) if payload.newPassword else privateUser["password_hash"]
+        connection.execute(
+            """
+            UPDATE users
+            SET email = ?, password_hash = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (nextEmail, nextPasswordHash, nowIso, user["id"]),
+        )
+        publicUser = connection.execute(
+            "SELECT id, email, role, is_email_verified, created_at FROM users WHERE id = ?",
+            (user["id"],),
+        ).fetchone()
+    setSessionCookie(response, publicUser)
+    return {"user": publicUser}
+
+
 @app.get("/api/cases")
 def apiListCases(user: dict = Depends(currentUserDependency)) -> dict:
     return {"cases": listCases(int(user["id"]))}
@@ -265,3 +302,23 @@ def adminQueryRuns(_: dict = Depends(adminDependency)) -> dict:
             """,
         ).fetchall()
     return {"runs": rows}
+
+
+@app.get("/api/admin/system-email")
+def adminSystemEmail(_: dict = Depends(adminDependency)) -> dict:
+    return {"config": getSystemSmtpConfigPublic()}
+
+
+@app.put("/api/admin/system-email")
+def adminSaveSystemEmail(payload: SystemSmtpConfigInput, _: dict = Depends(adminDependency)) -> dict:
+    try:
+        config = saveSystemSmtpConfig(
+            fromEmail=payload.fromEmail,
+            host=payload.host,
+            port=payload.port,
+            useSsl=payload.useSsl,
+            password=payload.password,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {"config": config}

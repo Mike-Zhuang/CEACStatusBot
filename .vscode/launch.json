@@ -3,20 +3,10 @@
   "configurations": [
     {
       "name": "Backend: FastAPI",
-      "type": "debugpy",
+      "type": "node-terminal",
       "request": "launch",
-      "module": "uvicorn",
-      "args": [
-        "CEACStatusBot.web.main:app",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "8000",
-        "--reload"
-      ],
+      "command": "uv run uvicorn CEACStatusBot.web.main:app --host 127.0.0.1 --port 8000 --reload",
       "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "justMyCode": true,
       "envFile": "${workspaceFolder}/.env"
     },
     {
@@ -38,4 +28,3 @@
     }
   ]
 }
-

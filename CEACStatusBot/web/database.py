@@ -71,6 +71,17 @@ def initializeDatabase() -> None:
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS system_smtp_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                from_email TEXT NOT NULL,
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                use_ssl INTEGER NOT NULL DEFAULT 1,
+                password_encrypted TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS ceac_cases (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,

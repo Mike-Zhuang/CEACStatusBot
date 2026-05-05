@@ -16,12 +16,26 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ProfileUpdateRequest(BaseModel):
+    email: str | None = Field(default=None, min_length=3)
+    currentPassword: str = Field(min_length=1)
+    newPassword: str | None = Field(default=None, min_length=8)
+
+
 class SmtpConfigInput(BaseModel):
     fromEmail: str = Field(min_length=3)
     host: str = Field(min_length=1)
     port: int = Field(ge=1, le=65535)
     useSsl: bool = True
     password: str = Field(min_length=1)
+
+
+class SystemSmtpConfigInput(BaseModel):
+    fromEmail: str = Field(min_length=3)
+    host: str = Field(min_length=1)
+    port: int = Field(ge=1, le=65535)
+    useSsl: bool = True
+    password: str | None = None
 
 
 class CeacCaseInput(BaseModel):

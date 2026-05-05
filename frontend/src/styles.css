@@ -90,24 +90,24 @@ h1, h2, h3, h4, p {
 }
 
 .display-lg {
-  font-size: 56px;
+  font-size: 42px;
   font-weight: 600;
   line-height: 1.10;
-  letter-spacing: -1.8px;
+  letter-spacing: -0.8px;
 }
 
 .display-md {
-  font-size: 40px;
+  font-size: 30px;
   font-weight: 600;
   line-height: 1.15;
-  letter-spacing: -1.0px;
+  letter-spacing: -0.4px;
 }
 
 .headline {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1.20;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.2px;
 }
 
 .card-title {
@@ -169,7 +169,7 @@ h1, h2, h3, h4, p {
 }
 
 /* Common */
-button, input {
+button, input, select {
   font: inherit;
 }
 
@@ -210,7 +210,7 @@ input:disabled {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: 32px 32px 72px;
   background: var(--canvas);
 }
 
@@ -220,9 +220,15 @@ input:disabled {
   right: 24px;
 }
 
+.auth-shell > .language-toggle {
+  position: absolute;
+  top: 24px;
+  right: 72px;
+}
+
 .auth-header {
   text-align: center;
-  margin-bottom: 48px;
+  margin-bottom: 32px;
 }
 
 .brand-mark {
@@ -240,7 +246,7 @@ input:disabled {
 
 .auth-panel {
   width: min(440px, 100%);
-  padding: 32px;
+  padding: 28px;
   border: 1px solid var(--hairline);
   border-radius: 12px;
   background: var(--surface-1);
@@ -255,7 +261,8 @@ label {
   font-weight: 500;
 }
 
-input {
+input,
+select {
   width: 100%;
   border: 1px solid var(--hairline);
   border-radius: 8px;
@@ -267,7 +274,8 @@ input {
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: var(--primary-focus);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-focus) 50%, transparent);
 }
@@ -332,6 +340,10 @@ input:focus {
 
 .button.tertiary:hover:not(:disabled) {
   background: var(--surface-2);
+}
+
+.language-toggle {
+  min-width: 42px;
 }
 
 .icon-button {
@@ -405,6 +417,32 @@ input:focus {
   flex-direction: column;
 }
 
+.site-footer {
+  margin-top: auto;
+  padding: 20px 24px 24px;
+  text-align: center;
+  color: var(--ink-tertiary);
+  font-size: 12px;
+}
+
+.auth-shell .site-footer {
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  left: 24px;
+  padding: 0;
+}
+
+.site-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.site-footer a:hover {
+  color: var(--ink-subtle);
+  text-decoration: underline;
+}
+
 .top-nav {
   position: sticky;
   top: 0;
@@ -469,7 +507,7 @@ input:focus {
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 48px 24px 96px;
+  padding: 36px 24px 80px;
 }
 
 .page-header {
@@ -477,7 +515,7 @@ input:focus {
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 48px;
+  margin-bottom: 32px;
 }
 
 .page-header p {
@@ -504,8 +542,12 @@ input:focus {
 .panel {
   background: var(--surface-1);
   border: 1px solid var(--hairline);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 24px;
+}
+
+.narrow-panel {
+  max-width: 760px;
 }
 
 .panel-title {
@@ -672,6 +714,57 @@ input:focus {
   background: var(--surface-2);
 }
 
+.form-intro {
+  margin: 8px 0 0;
+  color: var(--ink-subtle);
+  font-size: 14px;
+}
+
+.official-form-note {
+  display: grid;
+  grid-template-columns: minmax(160px, auto) 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+}
+
+.official-form-note strong {
+  color: var(--ink-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.official-form-note span {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.form-section {
+  display: grid;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+
+.section-help {
+  margin: 0;
+  color: var(--ink-subtle);
+  font-size: 14px;
+}
+
+.field-hint {
+  color: var(--ink-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.select-input {
+  max-height: 42px;
+}
+
 .settings-row {
   display: flex;
   align-items: center;
@@ -681,10 +774,6 @@ input:focus {
   border: 1px solid var(--hairline);
   border-radius: 8px;
   background: var(--canvas);
-}
-
-select {
-  font: inherit;
 }
 
 @media (max-width: 720px) {
@@ -698,5 +787,9 @@ select {
   .row-actions,
   .nav-actions {
     flex-wrap: wrap;
+  }
+
+  .official-form-note {
+    grid-template-columns: 1fr;
   }
 }
