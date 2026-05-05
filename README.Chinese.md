@@ -1,100 +1,111 @@
-# CEACStatusBot🤖
+# CEACStatusBot Web
 
-自动从[CEAC](https://ceac.state.gov/CEACStatTracker/Status.aspx?App=NIV)查询您的美国签证申请状态，并在状态更新时立即通知您！
+CEACStatusBot Web 是一个自托管的美国签证 CEAC 状态监控面板。它提供账号注册登录、多个签证档案管理、定时随机查询、状态历史记录、邮件通知和管理员后台，适合先在本地开发，再部署到自己的服务器向公网开放。
 
-感谢 [Andision](https://github.com/Andision)的 [CEACStatusBot](https://github.com/Andision/CEACStatusBot), 这个分支更新了当前的依赖并重构了代码，以便在状态发生变化时通知用户。
+本项目是修改版本，遵循 GPLv3 许可证发布。项目保留并改造了 CEAC 状态查询与验证码识别相关思路，感谢原项目 [Andision/CEACStatusBot](https://github.com/Andision/CEACStatusBot)。
 
-## 使用
+## 功能
 
+- FastAPI 后端、SQLite 数据库、APScheduler 常驻调度。
+- React + Vite + TypeScript 前端控制台。
+- 暗色 / 亮色模式切换，主题偏好保存在浏览器本地。
+- 开放注册，注册时发送邮箱验证码。
+- 每个用户可创建多个 CEAC 查询档案。
+- 每个档案每小时随机分钟查询一次，降低固定时间触发特征。
+- 状态无变化不发邮件；状态或 CEAC 更新时间变化时记录历史并发送通知。
+- 用户可为每个档案开启或关闭状态更新邮件推送。
+- 用户可手动快速查询当前 CEAC 状态。
+- 用户可手动发送一封测试邮件，邮件内容使用现有状态通知模板。
+- 默认使用系统 SMTP 发信，也允许用户配置自己的 SMTP。
+- 管理员账号可查看所有用户档案、状态历史与查询日志。
 
-您可以将其部署到您自己的机器上，但强烈建议使用Github Actions。
+## 默认账号
 
+首次启动后端时会自动创建两个账号：
 
-###  环境变量
+| 角色 | 邮箱 | 密码 |
+| --- | --- | --- |
+| 管理员 | `admin@ceac.local` | `Admin@123456` |
+| 普通用户 | `user@ceac.local` | `User@123456` |
 
+公网部署后请尽快修改默认密码，并设置强 `SECRET_KEY` 和 `ENCRYPTION_KEY`。
 
-- LOCATION: 您申请签证的使领馆的地点。要查找使领馆对应的名称，请参考[此表](LOCATION.md)。请直接使用使馆位置名，如`CHINA, BEIJING`。
-
-
-- NUMBER: 您在CEAC网站中的Application ID or Case Number(例如`AA0020AKAX` 或 `2012118 345 0001`)。具体信息请查看[CEAC](https://ceac.state.gov/CEACStatTracker/Status.aspx?App=NIV)网站的说明。**注意**: 请先在[CEAC](https://ceac.state.gov/CEACStatTracker/Status.aspx?App=NIV)网站确认你能够正确获取你的签证状态。这一项目的目的是简化从[CEAC](https://ceac.state.gov/CEACStatTracker/Status.aspx?App=NIV)网站获取签证信息的过程，并不能比人工方式获得更多的信息。
-
-- PASSPORT_NUMBER: 护照号码
-
-- SURNAME: 姓的前5个英文字母
-
-- TIMEZONE: 可选，设置你所在的时区，以避免在睡眠时间收到打扰。例如: `Asia/Shanghai` 或 `America/New_York`。**注意**: 这里使用的是IANA时区数据库的时区表示法，并不是简单的地理位置的组合。例如，如果你希望使用北京时间，你的时区应该是`Asia/Shanghai`而**不是** ~~`Asia/Beijing`~~
-
-- ACTIVE_HOURS: 可选，设置接收通知的活跃时间段，以避免在睡眠时间收到打扰。使用24小时格式。例如: `08:00-22:00`
-
-- GH_TOKEN: 要访问之前的状态，您需要设置一个具有`repo`权限的Github令牌。您可以在Github -> 设置 -> 开发者设置 -> 个人访问令牌中创建一个新的令牌。
-
-#### 邮件通知
-
-如果你想收到邮件通知，需要设置如下环境变量：
-
-- FROM: 发送通知的电子邮件地址。**注意**: 本项目并不提供任何电子邮件服务，需要使用你提供的第三方电子邮件服务通过SMTP协议发送电子邮件，因此需要你提供用于发送通知的电子邮件地址。*一个小技巧是，如果你希望如果你希望通过邮件提醒自己签证状态，你可以在此处填写和收取通知相同的电子邮件地址，即可以使用同一个邮箱收发邮件，换句话说你可以自己给自己发邮件。*
-
-- TO: 接收通知的电子邮件地址。您可以发送到多个电子邮件地址，用“|”分割多个电子邮件地址(“|”这个符号通常在退格键Backspace的下方，回车Enter的上方，你通常需要使用上档Shift键打出这个符号)，不用且不可添加任何空格。下面是几个例子: 
-  - 发送到一个邮箱: `your_mail@email.com`
-  - 发送到多个邮箱: `first@email.com|second@email.com|third@email.com`
-
-- PASSWORD: 在`FROM`填写的邮箱的密码。**注意**: 对于一些电子邮箱(如QQ邮箱)，你应该在这里使用“授权码”而不是邮箱的密码，因为这个项目使用SMTP协议发送电子邮件。有关详细信息，请查看邮箱服务提供商的SMTP使用方法。
-
-- SMTP: 可选，设置SMTP服务器 (e.g. `smtp.example.com`, `smtp.example.com:587`)
-
-#### Telegram机器人通知
-
-如果你想通过Telegram Bot发送通知，需要设置如下环境变量。
-
-Telegram Bot [创建教程](https://www.cytron.io/tutorial/how-to-create-a-telegram-bot-get-the-api-key-and-chat-id)
-
-- TG_BOT_TOKEN: Bot 密钥
-
-- TG_CHAT_ID: 聊天 ID，获取方法见教程
-
-### 在 Github Actions 的使用方法
-
-
-1. folk这个仓库
-
-
-2. 在`Github -> Settings -> Secrets and variables -> Actions -> New repository secret`中设置环境变量。
-![image](docs/github.new.secret.png)
-
-
-3. 查看 `Github Actions` 中的 `workflows` 是否正常运行并检查邮箱是否收到邮件。
-
-### 本地使用
-
-对于本地使用，可以在项目根目录创建一个 `.env` 文件来存储你的环境变量 (例如 `LOCATION=...`, `NUMBER=...`)，脚本会自动加载它们。或者拷贝模版文件 `.env.example` 并重命名为 `.env`来使用。
-然后使用 uv 构建环境：
+## 本地开发
 
 ```bash
-pip install uv # 如果你没有安装 uv
+pip install uv
 uv sync
-uv run trigger.py
+cp .env.example .env
+uv run uvicorn CEACStatusBot.web.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+另开一个终端：
 
-## 待办事项
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-- [x] 向多个邮箱发送邮件。
+打开 `http://127.0.0.1:5173`。
 
-- [x] 增加更多第三方通知服务。
+VS Code 调试配置位于 `.vscode/launch.json`，提供后端、前端和 Full Stack 三个配置，不会自动启动浏览器。
 
-- [ ] 更人性化的界面。
+## 邮箱配置
 
+腾讯企业邮箱默认服务器：
 
-## 特别感谢
+- SMTP：`smtp.exmail.qq.com`
+- SMTP SSL 端口：`465`
+- IMAP：`imap.exmail.qq.com`
+- IMAP SSL 端口：`993`
 
-### 开发者
+当前 Web 应用核心流程只需要 SMTP；IMAP 暂不参与状态查询或通知。
 
-[h4x3rotab](https://github.com/h4x3rotab) : Telegram bot, 适配新版CEAC接口
+关键环境变量：
 
-### 相关项目
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `DATABASE_PATH` | `ceacstatusbot.sqlite3` | SQLite 数据库路径 |
+| `SECRET_KEY` | 开发默认值 | 会话签名密钥，公网必须修改 |
+| `ENCRYPTION_KEY` | 由 `SECRET_KEY` 派生 | 用户 SMTP 授权码加密密钥，建议用 Fernet key |
+| `SYSTEM_FROM_EMAIL` | 空 | 系统默认发信邮箱 |
+| `SYSTEM_EMAIL_PASSWORD` | 空 | 系统默认发信邮箱授权码 |
+| `SYSTEM_SMTP_HOST` | `smtp.exmail.qq.com` | 系统 SMTP 主机 |
+| `SYSTEM_SMTP_PORT` | `465` | 系统 SMTP 端口 |
+| `SYSTEM_SMTP_USE_SSL` | `true` | 是否使用 SMTP SSL |
+| `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许访问后端的前端地址 |
+| `COOKIE_SECURE` | `false` | HTTPS 部署时设为 `true` |
 
-这个repo中的部分代码引用了下面的项目。谢谢你们的工作。
+生成 `ENCRYPTION_KEY`：
 
-- [ceac_tracker](https://github.com/lixin-wei/ceac_tracker)
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
 
-- [CEACStatTracker](https://github.com/yuzeming/CEACStatTracker)
+## 查询与通知逻辑
+
+每个启用的签证档案都会保存 `nextCheckAt`。调度器每分钟扫描到期档案，并调用 CEAC 查询流程。查询完成后，系统会把下一次查询时间设为下一小时内的随机分钟。
+
+系统会比较最近一次历史记录中的状态和 CEAC 更新时间：
+
+- 完全一致：只记录查询日志，不发送通知。
+- 状态或 CEAC 更新时间变化：写入该档案的状态历史，并发送邮件。
+
+如果某个档案关闭了“状态更新邮件推送”，系统仍会定时查询并记录时间线，但不会在状态变化时自动发邮件。用户仍可手动点击“测试发信”，按最新已有状态模板发送一封邮件。
+
+## 部署建议
+
+- 使用 HTTPS，并设置 `COOKIE_SECURE=true`。
+- 使用反向代理把前端静态文件和后端 API 暴露到同一域名。
+- 定期备份 SQLite 数据库。
+- 公网开放注册时关注查询量，必要时增加邀请码或管理员审核。
+- 不要提交 `.env`、数据库文件、用户 SMTP 授权码或服务器私钥。
+
+## License
+
+本项目遵循 [GNU General Public License v3.0](LICENSE)。如果你分发修改版本，需要继续遵守 GPLv3 的源码开放、许可证保留和修改声明要求。
+
+## 致谢
+
+感谢 [Andision/CEACStatusBot](https://github.com/Andision/CEACStatusBot)。本项目基于其 CEAC 自动查询方向与部分实现进行 Web 化、服务化和多用户改造。

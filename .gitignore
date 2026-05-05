@@ -1,4 +1,9 @@
-__pycache__
-.venv
 .env
-status_record.json
+*.sqlite3
+*.db
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+__pycache__/
+*.pyc
+.DS_Store
