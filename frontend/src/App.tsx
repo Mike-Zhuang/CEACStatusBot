@@ -798,8 +798,10 @@ export function App() {
   if (!user) {
     return (
       <main className="auth-shell">
-        <ThemeButton themeMode={themeMode} setThemeMode={setThemeMode} t={t} />
-        <LanguageButton languageMode={languageMode} setLanguageMode={setLanguageMode} />
+        <div className="auth-tools">
+          <LanguageButton languageMode={languageMode} setLanguageMode={setLanguageMode} />
+          <ThemeButton themeMode={themeMode} setThemeMode={setThemeMode} t={t} />
+        </div>
         <div className="auth-header">
           <img className="brand-mark" src="/favicon.svg" alt="CEACStatusBot" />
           <h1 className="display-md">CEACStatusBot</h1>
@@ -888,11 +890,13 @@ export function App() {
   return (
     <main className="app-shell">
       <header className="top-nav">
-        <div className="brand-lockup">
-          <img className="brand-mark" src="/favicon.svg" alt="" />
-          CEACStatusBot
+        <div className="top-nav-main">
+          <div className="brand-lockup">
+            <img className="brand-mark" src="/favicon.svg" alt="" />
+            <span className="brand-name">CEACStatusBot</span>
+          </div>
         </div>
-        <div className="nav-actions">
+        <nav className="nav-actions" aria-label="Primary">
           <button className={`nav-tab ${viewMode === "dashboard" ? "active" : ""}`} onClick={() => setViewMode("dashboard")}>
             <UserRound size={16} /> {t("dashboard")}
           </button>
@@ -910,9 +914,11 @@ export function App() {
               <Shield size={16} /> {t("admin")}
             </button>
           )}
+        </nav>
+        <div className="utility-actions">
           <LanguageButton languageMode={languageMode} setLanguageMode={setLanguageMode} />
           <ThemeButton themeMode={themeMode} setThemeMode={setThemeMode} t={t} />
-          <button className="button tertiary" onClick={logout} title={t("logoutTitle")}>
+          <button className="button tertiary icon-only" onClick={logout} title={t("logoutTitle")} aria-label={t("logoutTitle")}>
             <LogOut size={16} />
           </button>
         </div>
