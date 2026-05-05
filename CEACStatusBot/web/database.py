@@ -96,6 +96,7 @@ def initializeDatabase() -> None:
                 email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
                 next_check_at TEXT,
                 last_checked_at TEXT,
+                last_trigger_type TEXT,
                 last_status_id INTEGER,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -133,6 +134,7 @@ def initializeDatabase() -> None:
                 status_id INTEGER,
                 error_message TEXT NOT NULL DEFAULT '',
                 duration_ms INTEGER NOT NULL DEFAULT 0,
+                trigger_type TEXT NOT NULL DEFAULT 'unknown',
                 FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE CASCADE,
                 FOREIGN KEY (status_id) REFERENCES status_catalog(id)
             );
@@ -145,6 +147,18 @@ def initializeDatabase() -> None:
         if "email_notifications_enabled" not in columns:
             connection.execute(
                 "ALTER TABLE ceac_cases ADD COLUMN email_notifications_enabled INTEGER NOT NULL DEFAULT 1",
+            )
+        if "last_trigger_type" not in columns:
+            connection.execute(
+                "ALTER TABLE ceac_cases ADD COLUMN last_trigger_type TEXT",
+            )
+        queryRunColumns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(query_runs)").fetchall()
+        }
+        if "trigger_type" not in queryRunColumns:
+            connection.execute(
+                "ALTER TABLE query_runs ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'unknown'",
             )
 
 

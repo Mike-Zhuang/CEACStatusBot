@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CEACStatusBot">
+  <rect width="64" height="64" rx="14" fill="#15151a"/>
+  <path
+    d="M43.5 18.8a17 17 0 1 0 0 26.4"
+    fill="none"
+    stroke="#8b93ff"
+    stroke-width="7"
+    stroke-linecap="round"
+  />
+  <path
+    d="M43.5 18.8a17 17 0 0 0-23.2 5.5"
+    fill="none"
+    stroke="#d8dcff"
+    stroke-width="3"
+    stroke-linecap="round"
+  />
+  <circle cx="46.5" cy="32" r="4.5" fill="#37d399"/>
+  <circle cx="46.5" cy="32" r="8.5" fill="none" stroke="#37d399" stroke-opacity=".22" stroke-width="3"/>
+</svg>

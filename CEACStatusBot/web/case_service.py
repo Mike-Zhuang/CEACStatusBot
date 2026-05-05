@@ -32,6 +32,7 @@ def normalizeCaseRow(row: dict[str, Any]) -> dict[str, Any]:
         "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
         "nextCheckAt": row["next_check_at"],
         "lastCheckedAt": row["last_checked_at"],
+        "lastTriggerType": row.get("last_trigger_type"),
         "lastStatus": row.get("last_status"),
         "lastDescription": row.get("last_description"),
         "createdAt": row["created_at"],
@@ -208,7 +209,7 @@ def getOrCreateStatus(connection: Any, status: str, description: str) -> int:
     return int(cursor.lastrowid)
 
 
-def runCaseQuery(caseId: int) -> dict[str, Any]:
+def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
     started = datetime.now(UTC)
     startedIso = started.replace(microsecond=0).isoformat()
     errorMessage = ""
@@ -280,22 +281,22 @@ def runCaseQuery(caseId: int) -> dict[str, Any]:
             connection.execute(
                 """
                 UPDATE ceac_cases
-                SET last_checked_at = ?, next_check_at = ?, last_status_id = ?, updated_at = ?
+                SET last_checked_at = ?, next_check_at = ?, last_status_id = ?, last_trigger_type = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (finishedIso, computeNextCheckAt(finished), statusId, finishedIso, caseId),
+                (finishedIso, computeNextCheckAt(finished), statusId, triggerType, finishedIso, caseId),
             )
         else:
             connection.execute(
-                "UPDATE ceac_cases SET last_checked_at = ?, next_check_at = ?, updated_at = ? WHERE id = ?",
-                (finishedIso, computeNextCheckAt(finished), finishedIso, caseId),
+                "UPDATE ceac_cases SET last_checked_at = ?, next_check_at = ?, last_trigger_type = ?, updated_at = ? WHERE id = ?",
+                (finishedIso, computeNextCheckAt(finished), triggerType, finishedIso, caseId),
             )
         connection.execute(
             """
-            INSERT INTO query_runs (case_id, started_at, finished_at, success, status_id, error_message, duration_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO query_runs (case_id, started_at, finished_at, success, status_id, error_message, duration_ms, trigger_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (caseId, startedIso, finishedIso, int(success), statusId, errorMessage, durationMs),
+            (caseId, startedIso, finishedIso, int(success), statusId, errorMessage, durationMs, triggerType),
         )
     return {"success": success, "changed": success and hasChanged, "error": errorMessage, "result": result}
 

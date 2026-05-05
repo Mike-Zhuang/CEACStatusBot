@@ -40,6 +40,7 @@ interface CeacCase {
   emailNotificationsEnabled: boolean;
   nextCheckAt: string | null;
   lastCheckedAt: string | null;
+  lastTriggerType: "manual" | "automatic" | "unknown" | null;
   lastStatus: string | null;
   lastDescription: string | null;
   createdAt: string;
@@ -65,10 +66,22 @@ interface QueryRun {
   user_email: string;
   started_at: string;
   finished_at: string;
+  trigger_type: "manual" | "automatic" | "unknown";
   success: number;
   status: string | null;
   error_message: string;
   duration_ms: number;
+}
+
+interface AdminUser {
+  id: number;
+  email: string;
+  role: "admin" | "user";
+  is_email_verified: number;
+  created_at: string;
+  updated_at: string;
+  case_count: number;
+  last_checked_at: string | null;
 }
 
 interface SystemEmailConfig {
@@ -136,6 +149,7 @@ const translations = {
   en: {
     admin: "Admin",
     adminTitle: "Admin Console",
+    adminUsers: "Users",
     appSubtitle: "Visa status monitoring, query history, and email delivery.",
     applicationId: "Application ID or Case Number",
     autoMonitor: "Enable automatic monitoring",
@@ -143,8 +157,10 @@ const translations = {
     caseList: "Profiles",
     caseName: "Profile name",
     caseNamePlaceholder: "e.g. Beijing F1 interview",
+    casesOwned: "Profiles",
     changeContent: "Change",
     confirmDelete: "Delete this profile?",
+    createdAt: "Created",
     currentLogin: "Signed in as",
     dashboard: "My Profiles",
     deliveryEmail: "Notification email",
@@ -162,6 +178,9 @@ const translations = {
     firstFiveSurname: "First 5 Letters of Surname",
     firstFiveSurnameHint: "Enter only the first 5 letters of your surname. If shorter, enter the full surname.",
     forgotPassword: "Forgot password?",
+    lastCheckMode: "Last query mode",
+    lastCheckedAt: "Last updated",
+    lastQuery: "Last query",
     location: "Select a location",
     locationMetric: "Location",
     keepPasswordPlaceholder: "Leave blank to keep current password",
@@ -174,7 +193,9 @@ const translations = {
     noLogs: "No logs yet",
     noStatus: "Not ready",
     noStatusChange: "No status change",
+    notVerified: "Not verified",
     newProfile: "New",
+    nextCheckAt: "Next automatic query",
     notifyEmail: "Notification email",
     officialIntro: "Welcome! On this website, you can check your U.S. visa application status.",
     passport: "Passport Number",
@@ -221,10 +242,15 @@ const translations = {
     themeToLight: "Switch to light mode",
     updatePushDisabled: "Status update emails disabled.",
     updatePushEnabled: "Status update emails enabled.",
+    updatedAt: "Updated",
     useCustomSmtp: "Custom SMTP",
     useSsl: "Use SSL",
+    triggerAutomatic: "Automatic",
+    triggerManual: "Manual",
+    triggerUnknown: "Unknown",
     verificationCode: "Verification code",
     verificationCodeSent: "Verification code sent. Please check your mailbox.",
+    verified: "Verified",
     visaApplicationType: "Visa Application Type",
     visaTypeNiv: "Nonimmigrant Visa (NIV)",
     waitFirstQuery: "Waiting for first query",
@@ -235,6 +261,7 @@ const translations = {
   zh: {
     admin: "管理员",
     adminTitle: "管理后台",
+    adminUsers: "用户资料",
     appSubtitle: "签证状态监控、查询历史与邮件提醒。",
     applicationId: "Application ID 或 Case Number",
     autoMonitor: "启用自动监控",
@@ -242,8 +269,10 @@ const translations = {
     caseList: "档案列表",
     caseName: "档案名称",
     caseNamePlaceholder: "例如：北京 F1 面签",
+    casesOwned: "档案数量",
     changeContent: "变更内容",
     confirmDelete: "确认删除此档案？",
+    createdAt: "创建时间",
     currentLogin: "当前登录",
     dashboard: "我的档案",
     deliveryEmail: "接收提醒邮箱",
@@ -261,6 +290,9 @@ const translations = {
     firstFiveSurname: "姓的前 5 个字母",
     firstFiveSurnameHint: "只填写姓氏前 5 个英文字母；不足 5 个按实际姓氏填写。",
     forgotPassword: "忘记密码？",
+    lastCheckMode: "上次抓取方式",
+    lastCheckedAt: "上次更新时间",
+    lastQuery: "最近查询",
     location: "选择面签地点",
     locationMetric: "办理地点",
     keepPasswordPlaceholder: "留空则保留当前授权码",
@@ -273,7 +305,9 @@ const translations = {
     noLogs: "暂无日志",
     noStatus: "未就绪",
     noStatusChange: "未发生状态变更",
+    notVerified: "未验证",
     newProfile: "新增",
+    nextCheckAt: "下次自动查询",
     notifyEmail: "接收邮箱",
     officialIntro: "欢迎！你可以在这里查询美国签证申请状态。",
     passport: "护照号码",
@@ -320,10 +354,15 @@ const translations = {
     themeToLight: "切换至亮色模式",
     updatePushDisabled: "已关闭状态更新邮件推送。",
     updatePushEnabled: "已开启状态更新邮件推送。",
+    updatedAt: "更新时间",
     useCustomSmtp: "自定义 SMTP",
     useSsl: "启用 SSL",
+    triggerAutomatic: "自动抓取",
+    triggerManual: "手动抓取",
+    triggerUnknown: "未知",
     verificationCode: "验证码",
     verificationCodeSent: "验证码已发送，请查看邮箱。",
+    verified: "已验证",
     visaApplicationType: "Visa Application Type",
     visaTypeNiv: "非移民签证（NIV）",
     waitFirstQuery: "等待首次查询",
@@ -374,6 +413,16 @@ function formatTime(value: string | null, languageMode: LanguageMode): string {
   return new Date(value).toLocaleString(languageMode === "zh" ? "zh-CN" : "en-US");
 }
 
+function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryRun["trigger_type"], t: (key: TranslationKey) => string): string {
+  if (value === "manual") {
+    return t("triggerManual");
+  }
+  if (value === "automatic") {
+    return t("triggerAutomatic");
+  }
+  return t("triggerUnknown");
+}
+
 function getRememberedCredentials(): { email: string; password: string; remember: boolean } {
   const enabled = localStorage.getItem("rememberLogin") === "true";
   return {
@@ -391,6 +440,7 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [cases, setCases] = useState<CeacCase[]>([]);
   const [adminCases, setAdminCases] = useState<CeacCase[]>([]);
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [queryRuns, setQueryRuns] = useState<QueryRun[]>([]);
   const [systemEmailConfig, setSystemEmailConfig] = useState<SystemEmailConfig | null>(null);
@@ -467,13 +517,15 @@ export function App() {
   }
 
   async function loadAdminData() {
-    const [runsPayload, casesPayload, systemEmailPayload] = await Promise.all([
+    const [runsPayload, casesPayload, usersPayload, systemEmailPayload] = await Promise.all([
       requestJson<{ runs: QueryRun[] }>("/api/admin/query-runs"),
       requestJson<{ cases: CeacCase[] }>("/api/admin/cases"),
+      requestJson<{ users: AdminUser[] }>("/api/admin/users"),
       requestJson<{ config: SystemEmailConfig }>("/api/admin/system-email"),
     ]);
     setQueryRuns(runsPayload.runs);
     setAdminCases(casesPayload.cases);
+    setAdminUsers(usersPayload.users);
     setSystemEmailConfig(systemEmailPayload.config);
     setSystemEmailForm({
       fromEmail: systemEmailPayload.config.fromEmail,
@@ -713,7 +765,7 @@ export function App() {
         <ThemeButton themeMode={themeMode} setThemeMode={setThemeMode} t={t} />
         <LanguageButton languageMode={languageMode} setLanguageMode={setLanguageMode} />
         <div className="auth-header">
-          <div className="brand-mark">C</div>
+          <img className="brand-mark" src="/favicon.svg" alt="CEACStatusBot" />
           <h1 className="display-md">CEACStatusBot</h1>
           <p className="body">{t("appSubtitle")}</p>
         </div>
@@ -801,7 +853,7 @@ export function App() {
     <main className="app-shell">
       <header className="top-nav">
         <div className="brand-lockup">
-          <span className="brand-mark">C</span>
+          <img className="brand-mark" src="/favicon.svg" alt="" />
           CEACStatusBot
         </div>
         <div className="nav-actions">
@@ -904,6 +956,14 @@ export function App() {
                         <Metric label={t("notifyEmail")} value={selectedCase.receiveEmail} />
                         <Metric label={t("status")} value={selectedCase.lastStatus || t("noStatus")} />
                       </div>
+                      <div className="two-col">
+                        <Metric label={t("lastCheckedAt")} value={formatTime(selectedCase.lastCheckedAt, languageMode)} />
+                        <Metric label={t("lastCheckMode")} value={formatTriggerType(selectedCase.lastTriggerType, t)} />
+                      </div>
+                      <div className="two-col">
+                        <Metric label={t("nextCheckAt")} value={formatTime(selectedCase.nextCheckAt, languageMode)} />
+                        <Metric label={t("emailPushSetting")} value={selectedCase.emailNotificationsEnabled ? t("emailPushOn") : t("emailPushOff")} />
+                      </div>
                       <div className="settings-row">
                         <label className="checkbox">
                           <input
@@ -954,10 +1014,12 @@ export function App() {
           />
         ) : (
           <AdminPanel
+            users={adminUsers}
             queryRuns={queryRuns}
             cases={adminCases}
             reload={loadAdminData}
             t={t}
+            languageMode={languageMode}
             systemEmailConfig={systemEmailConfig}
             systemEmailForm={systemEmailForm}
             setSystemEmailForm={setSystemEmailForm}
@@ -1084,10 +1146,12 @@ function ProfilePanel(props: {
 }
 
 function AdminPanel(props: {
+  users: AdminUser[];
   queryRuns: QueryRun[];
   cases: CeacCase[];
   reload: () => Promise<void>;
   t: (key: TranslationKey) => string;
+  languageMode: LanguageMode;
   systemEmailConfig: SystemEmailConfig | null;
   systemEmailForm: SystemEmailForm;
   setSystemEmailForm: React.Dispatch<React.SetStateAction<SystemEmailForm>>;
@@ -1095,6 +1159,13 @@ function AdminPanel(props: {
   isBusy: boolean;
 }) {
   const form = props.systemEmailForm;
+  const casesByUserId = useMemo(() => {
+    const grouped = new Map<number, CeacCase[]>();
+    for (const item of props.cases) {
+      grouped.set(item.userId, [...(grouped.get(item.userId) ?? []), item]);
+    }
+    return grouped;
+  }, [props.cases]);
   return (
     <div className="stack">
       <section className="panel">
@@ -1166,34 +1237,81 @@ function AdminPanel(props: {
 
       <section className="panel">
         <div className="panel-title">
+          <h2 className="headline">{props.t("adminUsers")}</h2>
+        </div>
+        <div className="admin-user-list">
+          {props.users.map((adminUser) => {
+            const ownedCases = casesByUserId.get(adminUser.id) ?? [];
+            return (
+              <div key={adminUser.id} className="admin-user-card">
+                <div className="admin-user-header">
+                  <div>
+                    <div className="case-name">{adminUser.email}</div>
+                    <div className="case-meta">
+                      {adminUser.role} · {adminUser.is_email_verified ? props.t("verified") : props.t("notVerified")}
+                    </div>
+                  </div>
+                  <span className="status-badge">{adminUser.case_count} {props.t("casesOwned")}</span>
+                </div>
+                <div className="admin-user-metrics">
+                  <Metric label={props.t("lastQuery")} value={formatTime(adminUser.last_checked_at, props.languageMode)} />
+                  <Metric label={props.t("createdAt")} value={formatTime(adminUser.created_at, props.languageMode)} />
+                  <Metric label={props.t("updatedAt")} value={formatTime(adminUser.updated_at, props.languageMode)} />
+                </div>
+                <div className="case-list compact">
+                  {ownedCases.map((item) => (
+                    <div key={item.id} className="admin-case-row">
+                      <span>{item.displayName}</span>
+                      <span className="mono-text">{item.applicationNum}</span>
+                      <span>{item.lastStatus ?? props.t("waitFirstQuery")}</span>
+                    </div>
+                  ))}
+                  {ownedCases.length === 0 && <p className="empty-state compact">{props.t("noCases")}</p>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
           <h2 className="headline">{props.t("systemLogs")}</h2>
           <button className="button secondary" onClick={props.reload}>{props.t("refresh")}</button>
         </div>
-        <div className="case-list">
-          {props.queryRuns.map((run) => (
-            <div key={run.id} className="changelog-row">
-              <div>
-                <div className="changelog-label">{props.t("executor")}</div>
-                <div className="changelog-value">{run.user_email}</div>
-              </div>
-              <div>
-                <div className="changelog-label">{props.t("profile")}</div>
-                <div className="changelog-value">{run.display_name}</div>
-              </div>
-              <div>
-                <div className="changelog-label">{props.t("status")}</div>
-                <div className="changelog-value"><span className={`status-badge ${run.success ? "success" : "error"}`}>{run.success ? props.t("success") : props.t("error")}</span></div>
-              </div>
-              <div>
-                <div className="changelog-label">{props.t("duration")}</div>
-                <div className="changelog-value mono-text">{run.duration_ms}ms</div>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <div className="changelog-label">{props.t("changeContent")}</div>
-                <div className="changelog-value">{run.status || run.error_message || props.t("noStatusChange")}</div>
-              </div>
-            </div>
-          ))}
+        <div className="log-table-wrap">
+          <table className="log-table">
+            <thead>
+              <tr>
+                <th>{props.t("lastCheckedAt")}</th>
+                <th>{props.t("executor")}</th>
+                <th>{props.t("profile")}</th>
+                <th>{props.t("applicationId")}</th>
+                <th>{props.t("lastCheckMode")}</th>
+                <th>{props.t("status")}</th>
+                <th>{props.t("duration")}</th>
+                <th>{props.t("changeContent")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {props.queryRuns.map((run) => (
+                <tr key={run.id}>
+                  <td>{formatTime(run.finished_at, props.languageMode)}</td>
+                  <td>{run.user_email}</td>
+                  <td>{run.display_name}</td>
+                  <td className="mono-text">{run.application_num}</td>
+                  <td>{formatTriggerType(run.trigger_type, props.t)}</td>
+                  <td>
+                    <span className={`status-badge ${run.success ? "success" : "error"}`}>
+                      {run.success ? props.t("success") : props.t("error")}
+                    </span>
+                  </td>
+                  <td className="mono-text">{run.duration_ms}ms</td>
+                  <td>{run.status || run.error_message || props.t("noStatusChange")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {props.queryRuns.length === 0 && <p className="empty-state">{props.t("noLogs")}</p>}
         </div>
       </section>

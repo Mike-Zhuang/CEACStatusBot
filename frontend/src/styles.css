@@ -238,10 +238,7 @@ input:disabled {
   display: grid;
   place-items: center;
   border-radius: 12px;
-  background: var(--primary);
-  color: white;
-  font-size: 24px;
-  font-weight: 600;
+  object-fit: contain;
 }
 
 .auth-panel {
@@ -500,8 +497,7 @@ select:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--primary);
-  color: white;
+  object-fit: contain;
 }
 
 .nav-tab {
@@ -689,31 +685,117 @@ select:focus {
   font-size: 14px;
 }
 
-/* Admin / Changelog Rows */
-.changelog-row {
+/* Admin */
+.admin-user-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 16px;
-  padding: 24px 0;
-  border-bottom: 1px solid var(--hairline);
+  gap: 12px;
+}
+
+.admin-user-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  min-width: 0;
+}
+
+.admin-user-header,
+.admin-user-metrics {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.admin-user-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.case-list.compact {
+  gap: 6px;
+}
+
+.admin-case-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(130px, 0.8fr) minmax(100px, 0.6fr);
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--ink-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.log-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
   background: var(--canvas);
 }
 
-.changelog-row:last-child {
-  border-bottom: none;
+.log-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.changelog-label {
-  color: var(--ink-subtle);
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-
-.changelog-value {
+.log-table th,
+.log-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--hairline);
   color: var(--ink);
-  font-weight: 500;
-  font-size: 14px;
-  word-break: break-all;
+  font-size: 13px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.log-table th {
+  color: var(--ink-subtle);
+  font-weight: 600;
+  background: var(--surface-2);
+}
+
+.log-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.log-table th:nth-child(1),
+.log-table td:nth-child(1) {
+  width: 170px;
+}
+
+.log-table th:nth-child(2),
+.log-table td:nth-child(2) {
+  width: 190px;
+}
+
+.log-table th:nth-child(4),
+.log-table td:nth-child(4) {
+  width: 170px;
+}
+
+.log-table th:nth-child(5),
+.log-table td:nth-child(5),
+.log-table th:nth-child(6),
+.log-table td:nth-child(6),
+.log-table th:nth-child(7),
+.log-table td:nth-child(7) {
+  width: 96px;
+}
+
+@media (max-width: 760px) {
+  .admin-user-header,
+  .admin-user-metrics,
+  .admin-case-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .empty-state {
@@ -722,6 +804,11 @@ select:focus {
   color: var(--ink-subtle);
   border: 1px dashed var(--hairline);
   border-radius: 12px;
+}
+
+.empty-state.compact {
+  padding: 18px 12px;
+  font-size: 13px;
 }
 
 /* Utils */

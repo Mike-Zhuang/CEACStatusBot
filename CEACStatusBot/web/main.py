@@ -78,7 +78,7 @@ def runDueCases() -> None:
         ).fetchall()
     for row in rows:
         try:
-            runCaseQuery(int(row["id"]))
+            runCaseQuery(int(row["id"]), triggerType="automatic")
         except Exception as exc:
             print(f"[scheduler] case {row['id']} failed: {exc}")
 
@@ -310,7 +310,7 @@ def apiHistory(caseId: int, user: dict = Depends(currentUserDependency)) -> dict
 def apiTestQuery(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
     if not getCase(caseId, int(user["id"])):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="签证档案不存在")
-    return runCaseQuery(caseId)
+    return runCaseQuery(caseId, triggerType="manual")
 
 
 @app.post("/api/cases/{caseId}/test-email")
@@ -327,7 +327,21 @@ def apiTestEmail(caseId: int, user: dict = Depends(currentUserDependency)) -> di
 def adminUsers(_: dict = Depends(adminDependency)) -> dict:
     with getConnection() as connection:
         users = connection.execute(
-            "SELECT id, email, role, is_email_verified, created_at, updated_at FROM users ORDER BY id ASC",
+            """
+            SELECT
+                u.id,
+                u.email,
+                u.role,
+                u.is_email_verified,
+                u.created_at,
+                u.updated_at,
+                COUNT(c.id) AS case_count,
+                MAX(c.last_checked_at) AS last_checked_at
+            FROM users u
+            LEFT JOIN ceac_cases c ON c.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.id ASC
+            """,
         ).fetchall()
     return {"users": users}
 
