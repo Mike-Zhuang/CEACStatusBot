@@ -5,6 +5,16 @@ class SendCodeRequest(BaseModel):
     email: str = Field(min_length=3)
 
 
+class PasswordResetCodeRequest(BaseModel):
+    email: str = Field(min_length=3)
+
+
+class PasswordResetRequest(BaseModel):
+    email: str = Field(min_length=3)
+    code: str = Field(min_length=4, max_length=12)
+    password: str = Field(min_length=8)
+
+
 class RegisterRequest(BaseModel):
     email: str = Field(min_length=3)
     password: str = Field(min_length=8)

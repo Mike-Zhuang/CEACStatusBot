@@ -22,6 +22,8 @@ from .schemas import (
     CeacCaseInput,
     CeacCasePatch,
     LoginRequest,
+    PasswordResetCodeRequest,
+    PasswordResetRequest,
     ProfileUpdateRequest,
     RegisterRequest,
     SendCodeRequest,
@@ -122,6 +124,59 @@ def sendCode(payload: SendCodeRequest) -> dict:
             ),
         )
     sendSystemEmail(payload.email, "CEACStatusBot 注册验证码", f"你的注册验证码是：{code}\n\n验证码 10 分钟内有效。")
+    return {"ok": True}
+
+
+@app.post("/api/auth/send-password-reset-code")
+def sendPasswordResetCode(payload: PasswordResetCodeRequest) -> dict:
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    now = datetime.now(UTC)
+    with getConnection() as connection:
+        existing = connection.execute("SELECT id FROM users WHERE email = ?", (payload.email,)).fetchone()
+        if not existing:
+            return {"ok": True}
+        connection.execute(
+            """
+            INSERT INTO email_verification_codes (email, code_hash, purpose, expires_at, created_at)
+            VALUES (?, ?, 'password_reset', ?, ?)
+            """,
+            (
+                payload.email,
+                hashCode(code),
+                (now + timedelta(minutes=10)).replace(microsecond=0).isoformat(),
+                now.replace(microsecond=0).isoformat(),
+            ),
+        )
+    sendSystemEmail(payload.email, "CEACStatusBot 重置密码验证码", f"你的重置密码验证码是：{code}\n\n验证码 10 分钟内有效。")
+    return {"ok": True}
+
+
+@app.post("/api/auth/reset-password")
+def resetPassword(payload: PasswordResetRequest) -> dict:
+    nowIso = utcNowIso()
+    with getConnection() as connection:
+        user = connection.execute("SELECT id FROM users WHERE email = ?", (payload.email,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码错误或已过期")
+        codeRow = connection.execute(
+            """
+            SELECT id, code_hash, expires_at
+            FROM email_verification_codes
+            WHERE email = ? AND purpose = 'password_reset' AND used_at IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (payload.email,),
+        ).fetchone()
+        if not codeRow or codeRow["code_hash"] != hashCode(payload.code):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码错误或已过期")
+        if datetime.fromisoformat(codeRow["expires_at"]) < datetime.now(UTC):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码错误或已过期")
+        connection.execute(
+            "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+            (hashPassword(payload.password), nowIso, user["id"]),
+        )
+        connection.execute("UPDATE email_verification_codes SET used_at = ? WHERE id = ?", (nowIso, codeRow["id"]))
     return {"ok": True}
 
 

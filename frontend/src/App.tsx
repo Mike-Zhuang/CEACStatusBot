@@ -16,7 +16,7 @@ import { ceacLocations } from "./locations";
 type ThemeMode = "dark" | "light";
 type LanguageMode = "zh" | "en";
 type ViewMode = "dashboard" | "profile" | "admin";
-type AuthMode = "login" | "register";
+type AuthMode = "login" | "register" | "forgot";
 
 interface User {
   id: number;
@@ -161,6 +161,7 @@ const translations = {
     fastQueryUnchanged: "Quick query completed: status unchanged",
     firstFiveSurname: "First 5 Letters of Surname",
     firstFiveSurnameHint: "Enter only the first 5 letters of your surname. If shorter, enter the full surname.",
+    forgotPassword: "Forgot password?",
     location: "Select a location",
     locationMetric: "Location",
     keepPasswordPlaceholder: "Leave blank to keep current password",
@@ -188,6 +189,11 @@ const translations = {
     registerAction: "Create account",
     rememberLogin: "Remember email and password",
     rememberPassword: "Remember password",
+    resetAction: "Reset password",
+    resetCodeSent: "If this email exists, a reset code has been sent.",
+    resetPassword: "Reset password",
+    resetPasswordSaved: "Password has been reset. Please sign in.",
+    resetPasswordMismatch: "The two passwords do not match.",
     requestFailed: "Request failed",
     save: "Save profile",
     send: "Send",
@@ -254,6 +260,7 @@ const translations = {
     fastQueryUnchanged: "快速查询完成：状态未变化",
     firstFiveSurname: "姓的前 5 个字母",
     firstFiveSurnameHint: "只填写姓氏前 5 个英文字母；不足 5 个按实际姓氏填写。",
+    forgotPassword: "忘记密码？",
     location: "选择面签地点",
     locationMetric: "办理地点",
     keepPasswordPlaceholder: "留空则保留当前授权码",
@@ -281,6 +288,11 @@ const translations = {
     registerAction: "创建账号",
     rememberLogin: "记住账号和密码",
     rememberPassword: "记住密码",
+    resetAction: "重置密码",
+    resetCodeSent: "如果该邮箱存在，重置验证码已发送。",
+    resetPassword: "重置密码",
+    resetPasswordSaved: "密码已重置，请重新登录。",
+    resetPasswordMismatch: "两次输入的新密码不一致。",
     requestFailed: "请求失败",
     save: "保存档案",
     send: "发送",
@@ -402,6 +414,8 @@ export function App() {
   const [authPassword, setAuthPassword] = useState(rememberedCredentials.password);
   const [rememberLogin, setRememberLogin] = useState(rememberedCredentials.remember);
   const [registerCode, setRegisterCode] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const t = (key: TranslationKey) => translations[languageMode][key];
@@ -500,6 +514,22 @@ export function App() {
     setIsBusy(true);
     setMessage("");
     try {
+      if (authMode === "forgot") {
+        if (authPassword !== resetConfirmPassword) {
+          setMessage(t("resetPasswordMismatch"));
+          return;
+        }
+        await requestJson<{ ok: boolean }>("/api/auth/reset-password", {
+          method: "POST",
+          body: JSON.stringify({ email: authEmail, code: resetCode, password: authPassword }),
+        });
+        setAuthMode("login");
+        setAuthPassword("");
+        setResetCode("");
+        setResetConfirmPassword("");
+        setMessage(t("resetPasswordSaved"));
+        return;
+      }
       const path = authMode === "login" ? "/api/auth/login" : "/api/auth/register";
       const body = authMode === "login"
         ? { email: authEmail, password: authPassword }
@@ -531,11 +561,12 @@ export function App() {
     setIsBusy(true);
     setMessage("");
     try {
-      await requestJson<{ ok: boolean }>("/api/auth/send-code", {
+      const path = authMode === "forgot" ? "/api/auth/send-password-reset-code" : "/api/auth/send-code";
+      await requestJson<{ ok: boolean }>(path, {
         method: "POST",
         body: JSON.stringify({ email: authEmail }),
       });
-      setMessage(t("verificationCodeSent"));
+      setMessage(authMode === "forgot" ? t("resetCodeSent") : t("verificationCodeSent"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t("sendCodeFailed"));
     } finally {
@@ -701,27 +732,63 @@ export function App() {
               <input value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} type="email" required autoComplete="username" />
             </label>
             <label>
-              {t("password")}
-              <input value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" required minLength={8} autoComplete={authMode === "login" ? "current-password" : "new-password"} />
+              {authMode === "forgot" ? t("resetPassword") : t("password")}
+              <input
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                type="password"
+                required
+                minLength={8}
+                autoComplete={authMode === "login" ? "current-password" : "new-password"}
+              />
             </label>
             {authMode === "login" && (
-              <label className="checkbox">
-                <input type="checkbox" checked={rememberLogin} onChange={(event) => setRememberLogin(event.target.checked)} />
-                <span className="body-sm">{t("rememberPassword")}</span>
-              </label>
+              <div className="auth-options">
+                <label className="checkbox">
+                  <input type="checkbox" checked={rememberLogin} onChange={(event) => setRememberLogin(event.target.checked)} />
+                  <span className="body-sm">{t("rememberPassword")}</span>
+                </label>
+                <button type="button" className="text-button" onClick={() => { setAuthMode("forgot"); setMessage(""); }}>
+                  {t("forgotPassword")}
+                </button>
+              </div>
             )}
-            {authMode === "register" && (
+            {(authMode === "register" || authMode === "forgot") && (
               <label>
                 {t("verificationCode")}
                 <div className="inline-field">
-                  <input value={registerCode} onChange={(event) => setRegisterCode(event.target.value)} required />
+                  <input
+                    value={authMode === "forgot" ? resetCode : registerCode}
+                    onChange={(event) => authMode === "forgot" ? setResetCode(event.target.value) : setRegisterCode(event.target.value)}
+                    required
+                  />
                   <button type="button" className="button secondary" onClick={sendCode} disabled={isBusy}>
                     {t("send")}
                   </button>
                 </div>
               </label>
             )}
-            <button className="button primary" disabled={isBusy}>{authMode === "login" ? t("loginAction") : t("registerAction")}</button>
+            {authMode === "forgot" && (
+              <label>
+                {languageMode === "zh" ? "确认新密码" : "Confirm new password"}
+                <input
+                  value={resetConfirmPassword}
+                  onChange={(event) => setResetConfirmPassword(event.target.value)}
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                />
+              </label>
+            )}
+            <button className="button primary" disabled={isBusy}>
+              {authMode === "login" ? t("loginAction") : authMode === "register" ? t("registerAction") : t("resetAction")}
+            </button>
+            {authMode === "forgot" && (
+              <button type="button" className="text-button centered" onClick={() => { setAuthMode("login"); setMessage(""); }}>
+                {t("login")}
+              </button>
+            )}
             {message && <p className="notice">{message}</p>}
           </form>
         </section>
