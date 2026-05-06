@@ -1191,7 +1191,7 @@ function ProfilePanel(props: {
 }) {
   const form = props.profileForm;
   return (
-    <section className="panel narrow-panel">
+    <section className="panel narrow-panel profile-panel">
       <div className="panel-title">
         <h2 className="headline">{props.t("personalInfo")}</h2>
       </div>

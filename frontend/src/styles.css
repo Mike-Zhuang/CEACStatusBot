@@ -1081,9 +1081,28 @@ select:focus {
     padding: 16px;
   }
 
+  .profile-panel {
+    max-width: none;
+  }
+
+  .profile-panel form {
+    gap: 14px;
+  }
+
+  .profile-panel .two-col {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .profile-panel .button.primary {
+    width: 100%;
+  }
+
   .panel-title {
     align-items: flex-start;
     flex-direction: column;
+    margin-bottom: 18px;
   }
 
   .panel-title > .button,
@@ -1129,14 +1148,39 @@ select:focus {
   .metric-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 0;
   }
 
   .metric {
-    padding: 10px 12px;
-    border: 1px solid var(--hairline);
-    border-radius: 8px;
-    background: var(--canvas);
+    grid-template-columns: minmax(104px, 36%) minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--hairline);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .metric-grid .metric:last-child {
+    border-bottom: 0;
+  }
+
+  .metric .caption {
+    padding-top: 1px;
+    color: var(--ink-subtle);
+  }
+
+  .metric .body-sm {
+    color: var(--ink);
+    text-align: left;
+  }
+
+  .settings-row {
+    padding: 14px 0 0;
+    border: 0;
+    border-top: 1px solid var(--hairline);
+    border-radius: 0;
+    background: transparent;
   }
 
   .action-notice {
@@ -1154,12 +1198,14 @@ select:focus {
 
   .log-table-wrap {
     overflow: hidden;
+    border: 0;
+    background: transparent;
   }
 
   .log-card-list {
     display: grid;
     gap: 10px;
-    padding: 10px;
+    padding: 0;
   }
 
   .log-card {
@@ -1168,7 +1214,7 @@ select:focus {
     padding: 12px;
     border: 1px solid var(--hairline);
     border-radius: 8px;
-    background: var(--surface-1);
+    background: var(--canvas);
     min-width: 0;
   }
 
@@ -1184,7 +1230,7 @@ select:focus {
   .log-card-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: 0;
   }
 
   .official-form-note {
@@ -1245,7 +1291,9 @@ select:focus {
   }
 
   .two-col {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .case-row {
