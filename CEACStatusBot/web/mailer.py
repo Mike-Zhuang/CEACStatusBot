@@ -126,17 +126,45 @@ def saveSystemSmtpConfig(*, fromEmail: str, host: str, port: int, useSsl: bool, 
 
 def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, result: dict[str, Any]) -> None:
     subject = f"[CEAC] {case['application_num']} 状态更新：{result['status']}"
+    lines = [
+        f"档案：{case['display_name']}",
+        f"申请号：{case['application_num']}",
+        f"状态：{result['status']}",
+        f"CEAC 更新时间：{result.get('case_last_updated', '')}",
+        f"签证类型：{result.get('visa_type', '')}",
+        "",
+        str(result.get("description", "")),
+    ]
+    if str(result.get("status", "")).strip().lower() == "issued":
+        lines.extend(
+            [
+                "",
+                "提示：该档案已进入 Issued，系统会将自动查询频率降为每周一次。",
+                "你可以登录站内档案详情页停止自动查询；如果一周内未停止，系统将自动停止该档案的自动查询并邮件通知你。",
+            ],
+        )
+    body = "\n".join(lines)
+    sendCaseEmail(case, smtpConfig, subject, body)
+
+
+def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, issuedAt: str) -> None:
+    subject = f"[CEAC] {case['application_num']} 已自动停止查询"
     body = "\n".join(
         [
             f"档案：{case['display_name']}",
             f"申请号：{case['application_num']}",
-            f"状态：{result['status']}",
-            f"CEAC 更新时间：{result.get('case_last_updated', '')}",
-            f"签证类型：{result.get('visa_type', '')}",
+            "状态：Issued",
+            f"首次记录 Issued 时间：{issuedAt}",
             "",
-            str(result.get("description", "")),
+            "该档案进入 Issued 已超过一周，且你尚未在站内停止自动查询。",
+            "系统已按策略自动关闭该档案的自动查询，避免继续请求 CEAC。",
+            "你仍然可以登录网站，在档案详情页手动执行快速查询。",
         ],
     )
+    sendCaseEmail(case, smtpConfig, subject, body)
+
+
+def sendCaseEmail(case: dict[str, Any], smtpConfig: dict[str, Any] | None, subject: str, body: str) -> None:
     if case["sender_mode"] == "custom" and smtpConfig:
         sendEmail(
             fromEmail=smtpConfig["from_email"],

@@ -7,7 +7,7 @@ from typing import Any
 from CEACStatusBot.request import query_status
 
 from .database import getConnection, utcNowIso
-from .mailer import sendCaseNotification
+from .mailer import sendCaseNotification, sendIssuedAutoStopNotification
 from .schemas import CeacCaseInput, CeacCasePatch
 from .secrets import decryptIfNeeded, encryptSecret, isEncryptedSecret
 
@@ -22,10 +22,17 @@ def isIssuedStatus(status: str | None) -> bool:
 def computeNextCheckAt(base: datetime | None = None, status: str | None = None) -> str:
     base = base or datetime.now(UTC)
     if isIssuedStatus(status):
-        nextDay = (base + timedelta(days=1)).replace(second=0, microsecond=0)
-        return nextDay.replace(minute=random.randint(0, 59)).isoformat()
+        nextWeek = (base + timedelta(days=7)).replace(second=0, microsecond=0)
+        return nextWeek.replace(hour=random.randint(0, 23), minute=random.randint(0, 59)).isoformat()
     nextHour = (base + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
     return (nextHour + timedelta(minutes=random.randint(0, 59))).isoformat()
+
+
+def parseIso(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def decryptCaseRow(row: dict[str, Any]) -> dict[str, Any]:
@@ -484,13 +491,15 @@ def enqueueCaseQuery(caseId: int, triggerType: str, userId: int | None = None) -
 
 
 def enqueueDueCases(limit: int = 20) -> list[dict[str, Any]]:
-    nowIso = datetime.now(UTC).replace(microsecond=0).isoformat()
+    now = datetime.now(UTC).replace(microsecond=0)
+    nowIso = now.isoformat()
     queued: list[dict[str, Any]] = []
     with getConnection() as connection:
         rows = connection.execute(
             """
-            SELECT c.id
+            SELECT c.*, s.status AS last_status
             FROM ceac_cases c
+            LEFT JOIN status_catalog s ON s.id = c.last_status_id
             WHERE c.is_enabled = 1
               AND c.next_check_at IS NOT NULL
               AND c.next_check_at <= ?
@@ -504,10 +513,83 @@ def enqueueDueCases(limit: int = 20) -> list[dict[str, Any]]:
             (nowIso, limit),
         ).fetchall()
     for row in rows:
+        if isIssuedStatus(row.get("last_status")) and handleIssuedDueCase(int(row["id"]), now):
+            continue
         job = enqueueCaseQuery(int(row["id"]), "automatic")
         if job:
             queued.append(job)
     return queued
+
+
+def handleIssuedDueCase(caseId: int, now: datetime) -> bool:
+    issuedAt = getFirstIssuedAt(caseId)
+    if not issuedAt:
+        return False
+    if now - issuedAt >= timedelta(days=7):
+        return stopIssuedCaseIfExpired(caseId, now, issuedAt)
+    with getConnection() as connection:
+        connection.execute(
+            """
+            UPDATE ceac_cases
+            SET next_check_at = ?, updated_at = ?
+            WHERE id = ? AND is_enabled = 1
+            """,
+            (computeNextCheckAt(issuedAt, "Issued"), now.isoformat(), caseId),
+        )
+    return True
+
+
+def getFirstIssuedAt(caseId: int) -> datetime | None:
+    with getConnection() as connection:
+        firstIssued = connection.execute(
+            """
+            SELECT h.fetched_at
+            FROM case_status_history h
+            JOIN status_catalog s ON s.id = h.status_id
+            WHERE h.case_id = ? AND lower(trim(s.status)) = 'issued'
+            ORDER BY h.fetched_at ASC, h.id ASC
+            LIMIT 1
+            """,
+            (caseId,),
+        ).fetchone()
+    if not firstIssued:
+        return None
+    return parseIso(str(firstIssued["fetched_at"]))
+
+
+def stopIssuedCaseIfExpired(caseId: int, now: datetime, issuedAt: datetime | None = None) -> bool:
+    with getConnection() as connection:
+        case = connection.execute(
+            """
+            SELECT c.*, s.status AS last_status
+            FROM ceac_cases c
+            LEFT JOIN status_catalog s ON s.id = c.last_status_id
+            WHERE c.id = ? AND c.is_enabled = 1
+            """,
+            (caseId,),
+        ).fetchone()
+        if not case or not isIssuedStatus(case.get("last_status")):
+            return False
+        issuedAt = issuedAt or getFirstIssuedAt(caseId)
+        if not issuedAt:
+            return False
+        if now - issuedAt < timedelta(days=7):
+            return False
+        connection.execute(
+            """
+            UPDATE ceac_cases
+            SET is_enabled = 0, next_check_at = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (now.isoformat(), caseId),
+        )
+        smtpConfig = connection.execute("SELECT * FROM smtp_configs WHERE user_id = ?", (case["user_id"],)).fetchone()
+
+    try:
+        sendIssuedAutoStopNotification(decryptCaseRow(case), smtpConfig, issuedAt.isoformat())
+    except Exception as exc:
+        print(f"[scheduler] issued auto-stop notification failed for case {caseId}: {exc}")
+    return True
 
 
 def getQueryJob(jobId: int, userId: int | None = None) -> dict[str, Any] | None:
