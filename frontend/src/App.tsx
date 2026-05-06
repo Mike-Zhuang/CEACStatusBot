@@ -97,6 +97,7 @@ interface PassportSlotMonitor {
   identifier: string;
   identifierMasked: string;
   isEnabled: boolean;
+  emailNotificationsEnabled: boolean;
   nextCheckAt: string | null;
   lastCheckedAt: string | null;
   lastSlotFingerprint: string;
@@ -319,6 +320,8 @@ const translations = {
     passportSlotSaved: "Passport appointment monitor saved.",
     passportSlotEnabled: "GTS monitor enabled.",
     passportSlotDisabled: "GTS monitor disabled.",
+    passportSlotEmailEnabled: "GTS slot email notifications enabled.",
+    passportSlotEmailDisabled: "GTS slot email notifications disabled.",
     passportSlotManualQuery: "Check slots now",
     passportSlotTestEmail: "Test GTS email",
     passportSlotTestEmailSending: "Sending GTS monitor test email.",
@@ -457,6 +460,8 @@ const translations = {
     passportSlotSaved: "护照预约监控已保存。",
     passportSlotEnabled: "已开启 GTS 监控。",
     passportSlotDisabled: "已关闭 GTS 监控。",
+    passportSlotEmailEnabled: "已开启 GTS slot 邮件推送。",
+    passportSlotEmailDisabled: "已关闭 GTS slot 邮件推送。",
     passportSlotManualQuery: "立即查询 slot",
     passportSlotTestEmail: "测试 GTS 邮件",
     passportSlotTestEmailSending: "正在发送 GTS 监控测试邮件。",
@@ -953,6 +958,7 @@ export function App() {
         body: JSON.stringify({
           identifier: passportSlotIdentifier,
           isEnabled: passportSlotMonitor?.isEnabled ?? true,
+          emailNotificationsEnabled: passportSlotMonitor?.emailNotificationsEnabled ?? true,
         }),
       });
       setPassportSlotMonitor(payload.monitor);
@@ -976,6 +982,23 @@ export function App() {
       });
       setPassportSlotMonitor(payload.monitor);
       setMessage(!targetMonitor.isEnabled ? t("passportSlotEnabled") : t("passportSlotDisabled"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function togglePassportSlotEmailNotifications(targetCase: CeacCase, targetMonitor: PassportSlotMonitor) {
+    setIsBusy(true);
+    setMessage("");
+    try {
+      const payload = await requestJson<{ monitor: PassportSlotMonitor }>(`/api/cases/${targetCase.id}/passport-slot-monitor`, {
+        method: "PATCH",
+        body: JSON.stringify({ emailNotificationsEnabled: !targetMonitor.emailNotificationsEnabled }),
+      });
+      setPassportSlotMonitor(payload.monitor);
+      setMessage(!targetMonitor.emailNotificationsEnabled ? t("passportSlotEmailEnabled") : t("passportSlotEmailDisabled"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
@@ -1292,6 +1315,7 @@ export function App() {
                     setIdentifier={setPassportSlotIdentifier}
                     saveMonitor={savePassportSlotMonitor}
                     toggleMonitor={togglePassportSlotMonitor}
+                    toggleEmailNotifications={togglePassportSlotEmailNotifications}
                     runQuery={runPassportSlotQuery}
                     sendTestEmail={sendPassportSlotTestEmail}
                     isBusy={isBusy}
@@ -1428,6 +1452,7 @@ function PassportSlotMonitorPanel(props: {
   setIdentifier: (value: string) => void;
   saveMonitor: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   toggleMonitor: (targetCase: CeacCase, targetMonitor: PassportSlotMonitor) => Promise<void>;
+  toggleEmailNotifications: (targetCase: CeacCase, targetMonitor: PassportSlotMonitor) => Promise<void>;
   runQuery: (caseId: number) => Promise<void>;
   sendTestEmail: (caseId: number) => Promise<void>;
   isBusy: boolean;
@@ -1446,7 +1471,7 @@ function PassportSlotMonitorPanel(props: {
         </div>
         {props.monitor && (
           <span className={`status-badge ${props.monitor.isEnabled ? "success" : ""}`}>
-            {props.monitor.isEnabled ? props.t("emailPushOn") : props.t("emailPushOff")}
+            {props.monitor.isEnabled ? props.t("autoMonitor") : props.t("passportSlotDisabled")}
           </span>
         )}
       </div>
@@ -1480,15 +1505,35 @@ function PassportSlotMonitorPanel(props: {
           {props.monitor.lastErrorMessage && (
             <Metric label={props.t("passportSlotLastError")} value={props.monitor.lastErrorMessage} />
           )}
+          <div className="settings-row">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={props.monitor.isEnabled}
+                onChange={() => props.toggleMonitor(props.selectedCase, props.monitor!)}
+                disabled={props.isBusy}
+              />
+              <span className="body-sm">{props.t("autoMonitor")}</span>
+            </label>
+            <span className={`status-badge ${props.monitor.isEnabled ? "success" : ""}`}>
+              {props.monitor.isEnabled ? props.t("passportSlotEnabled") : props.t("passportSlotDisabled")}
+            </span>
+          </div>
+          <div className="settings-row">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={props.monitor.emailNotificationsEnabled}
+                onChange={() => props.toggleEmailNotifications(props.selectedCase, props.monitor!)}
+                disabled={props.isBusy}
+              />
+              <span className="body-sm">{props.t("emailPushSetting")}</span>
+            </label>
+            <span className={`status-badge ${props.monitor.emailNotificationsEnabled ? "success" : ""}`}>
+              {props.monitor.emailNotificationsEnabled ? props.t("emailPushOn") : props.t("emailPushOff")}
+            </span>
+          </div>
           <div className="row-actions">
-            <button
-              type="button"
-              className="button secondary"
-              onClick={() => props.toggleMonitor(props.selectedCase, props.monitor!)}
-              disabled={props.isBusy}
-            >
-              {props.monitor.isEnabled ? props.t("passportSlotDisabled") : props.t("passportSlotEnabled")}
-            </button>
             <button
               type="button"
               className="button secondary"

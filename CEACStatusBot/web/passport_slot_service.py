@@ -68,6 +68,7 @@ def normalizePassportSlotMonitor(row: dict[str, Any] | None) -> dict[str, Any] |
         "identifier": identifier,
         "identifierMasked": maskIdentifier(identifier) if identifier else "",
         "isEnabled": bool(row["is_enabled"]),
+        "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
         "nextCheckAt": row["next_check_at"],
         "lastCheckedAt": row["last_checked_at"],
         "lastSlotFingerprint": row["last_slot_fingerprint"],
@@ -98,7 +99,13 @@ def getPassportSlotMonitor(caseId: int, userId: int | None = None) -> dict[str, 
     return normalizePassportSlotMonitor(row)
 
 
-def upsertPassportSlotMonitor(caseId: int, userId: int, identifier: str, isEnabled: bool) -> dict[str, Any] | None:
+def upsertPassportSlotMonitor(
+    caseId: int,
+    userId: int,
+    identifier: str,
+    isEnabled: bool,
+    emailNotificationsEnabled: bool,
+) -> dict[str, Any] | None:
     normalizedIdentifier = normalizeIdentifier(identifier)
     now = datetime.now(UTC).replace(microsecond=0)
     nowIso = now.isoformat()
@@ -112,25 +119,32 @@ def upsertPassportSlotMonitor(caseId: int, userId: int, identifier: str, isEnabl
             connection.execute(
                 """
                 UPDATE passport_slot_monitors
-                SET identifier_encrypted = ?, is_enabled = ?, next_check_at = ?, last_error_message = '', updated_at = ?
+                SET identifier_encrypted = ?, is_enabled = ?, email_notifications_enabled = ?,
+                    next_check_at = ?, last_error_message = '', updated_at = ?
                 WHERE case_id = ?
                 """,
-                (encryptSecret(normalizedIdentifier), int(isEnabled), nextCheckAt, nowIso, caseId),
+                (encryptSecret(normalizedIdentifier), int(isEnabled), int(emailNotificationsEnabled), nextCheckAt, nowIso, caseId),
             )
         else:
             connection.execute(
                 """
                 INSERT INTO passport_slot_monitors (
-                    case_id, identifier_encrypted, is_enabled, next_check_at, created_at, updated_at
+                    case_id, identifier_encrypted, is_enabled, email_notifications_enabled, next_check_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (caseId, encryptSecret(normalizedIdentifier), int(isEnabled), nextCheckAt, nowIso, nowIso),
+                (caseId, encryptSecret(normalizedIdentifier), int(isEnabled), int(emailNotificationsEnabled), nextCheckAt, nowIso, nowIso),
             )
     return getPassportSlotMonitor(caseId, userId)
 
 
-def patchPassportSlotMonitor(caseId: int, userId: int, isEnabled: bool) -> dict[str, Any] | None:
+def patchPassportSlotMonitor(
+    caseId: int,
+    userId: int,
+    *,
+    isEnabled: bool | None = None,
+    emailNotificationsEnabled: bool | None = None,
+) -> dict[str, Any] | None:
     now = datetime.now(UTC).replace(microsecond=0)
     nowIso = now.isoformat()
     with getConnection() as connection:
@@ -145,13 +159,21 @@ def patchPassportSlotMonitor(caseId: int, userId: int, isEnabled: bool) -> dict[
         ).fetchone()
         if not row:
             return None
+        assignments: list[str] = []
+        values: list[Any] = []
+        if isEnabled is not None:
+            assignments.extend(["is_enabled = ?", "next_check_at = ?"])
+            values.extend([int(isEnabled), computeNextPassportSlotCheckAt(now) if isEnabled else None])
+        if emailNotificationsEnabled is not None:
+            assignments.append("email_notifications_enabled = ?")
+            values.append(int(emailNotificationsEnabled))
+        if not assignments:
+            return getPassportSlotMonitor(caseId, userId)
+        assignments.append("updated_at = ?")
+        values.extend([nowIso, caseId])
         connection.execute(
-            """
-            UPDATE passport_slot_monitors
-            SET is_enabled = ?, next_check_at = ?, updated_at = ?
-            WHERE case_id = ?
-            """,
-            (int(isEnabled), computeNextPassportSlotCheckAt(now) if isEnabled else None, nowIso, caseId),
+            f"UPDATE passport_slot_monitors SET {', '.join(assignments)} WHERE case_id = ?",
+            tuple(values),
         )
     return getPassportSlotMonitor(caseId, userId)
 
@@ -324,7 +346,7 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
     previousFingerprint = row["last_slot_fingerprint"] or ""
     hasSlot = bool(slots)
     changed = success and fingerprint != previousFingerprint
-    shouldNotify = success and hasSlot and fingerprint != previousFingerprint
+    shouldNotify = success and hasSlot and fingerprint != previousFingerprint and bool(row["email_notifications_enabled"])
 
     with getConnection() as connection:
         if shouldNotify:

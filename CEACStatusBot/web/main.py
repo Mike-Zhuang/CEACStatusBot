@@ -395,7 +395,13 @@ def apiPassportSlotMonitor(caseId: int, user: dict = Depends(currentUserDependen
 @app.put("/api/cases/{caseId}/passport-slot-monitor")
 def apiSavePassportSlotMonitor(caseId: int, payload: PassportSlotMonitorInput, user: dict = Depends(currentUserDependency)) -> dict:
     try:
-        monitor = upsertPassportSlotMonitor(caseId, int(user["id"]), payload.identifier, payload.isEnabled)
+        monitor = upsertPassportSlotMonitor(
+            caseId,
+            int(user["id"]),
+            payload.identifier,
+            payload.isEnabled,
+            payload.emailNotificationsEnabled,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not monitor:
@@ -405,7 +411,12 @@ def apiSavePassportSlotMonitor(caseId: int, payload: PassportSlotMonitorInput, u
 
 @app.patch("/api/cases/{caseId}/passport-slot-monitor")
 def apiPatchPassportSlotMonitor(caseId: int, payload: PassportSlotMonitorPatch, user: dict = Depends(currentUserDependency)) -> dict:
-    monitor = patchPassportSlotMonitor(caseId, int(user["id"]), payload.isEnabled)
+    monitor = patchPassportSlotMonitor(
+        caseId,
+        int(user["id"]),
+        isEnabled=payload.isEnabled,
+        emailNotificationsEnabled=payload.emailNotificationsEnabled,
+    )
     if not monitor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="护照预约监控不存在")
     return {"monitor": monitor}

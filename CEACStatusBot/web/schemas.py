@@ -77,7 +77,9 @@ class CeacCasePatch(BaseModel):
 class PassportSlotMonitorInput(BaseModel):
     identifier: str = Field(min_length=1, max_length=32)
     isEnabled: bool = True
+    emailNotificationsEnabled: bool = True
 
 
 class PassportSlotMonitorPatch(BaseModel):
-    isEnabled: bool
+    isEnabled: bool | None = None
+    emailNotificationsEnabled: bool | None = None

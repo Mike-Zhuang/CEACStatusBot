@@ -161,6 +161,7 @@ def initializeDatabase() -> None:
                 case_id INTEGER NOT NULL UNIQUE,
                 identifier_encrypted TEXT NOT NULL,
                 is_enabled INTEGER NOT NULL DEFAULT 1,
+                email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
                 next_check_at TEXT,
                 last_checked_at TEXT,
                 last_slot_fingerprint TEXT NOT NULL DEFAULT '',
@@ -213,6 +214,14 @@ def initializeDatabase() -> None:
         if "result_json" not in queryJobColumns:
             connection.execute(
                 "ALTER TABLE query_jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT ''",
+            )
+        passportSlotMonitorColumns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(passport_slot_monitors)").fetchall()
+        }
+        if "email_notifications_enabled" not in passportSlotMonitorColumns:
+            connection.execute(
+                "ALTER TABLE passport_slot_monitors ADD COLUMN email_notifications_enabled INTEGER NOT NULL DEFAULT 1",
             )
 
 
