@@ -165,16 +165,44 @@ def sendPassportSlotNotification(
     slotLines: list[str],
     rawSummary: str,
 ) -> None:
+    sendPassportSlotStatusEmail(
+        case,
+        smtpConfig,
+        identifierMasked=identifierMasked,
+        fetchedAt=fetchedAt,
+        slotLines=slotLines,
+        rawSummary=rawSummary,
+        hasSlots=True,
+        isTest=False,
+    )
+
+
+def sendPassportSlotStatusEmail(
+    case: dict[str, Any],
+    smtpConfig: dict[str, Any] | None,
+    *,
+    identifierMasked: str,
+    fetchedAt: str,
+    slotLines: list[str],
+    rawSummary: str,
+    hasSlots: bool,
+    isTest: bool = False,
+) -> None:
     subject = f"[GTS] 发现可预约时间：{case['display_name']}"
+    if isTest:
+        subject = f"[GTS] 护照预约监控测试：{case['display_name']}"
     lines = [
         f"档案：{case['display_name']}",
         f"申请号：{case['application_num']}",
         f"UID/HAL：{identifierMasked}",
         f"查询时间：{fetchedAt}",
         "",
-        "可预约时间：",
+        "当前可预约时间：" if hasSlots else "当前状态：暂无可预约时间",
     ]
-    lines.extend(slotLines or ["接口返回了可用 slot，但未能解析为标准日期字段，请查看下方原始摘要。"])
+    if hasSlots:
+        lines.extend(slotLines or ["接口返回了可用 slot，但未能解析为标准日期字段，请查看下方原始摘要。"])
+    elif isTest:
+        lines.append("这是一封测试邮件，用于确认护照预约监控的发信配置可用。")
     if rawSummary:
         lines.extend(["", "原始返回摘要：", rawSummary])
     lines.extend(["", "预约入口：https://schedule.gtspremium.com/"])

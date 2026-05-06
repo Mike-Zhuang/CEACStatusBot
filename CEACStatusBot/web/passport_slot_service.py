@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from .database import getConnection, utcNowIso
-from .mailer import sendPassportSlotNotification
+from .mailer import sendPassportSlotNotification, sendPassportSlotStatusEmail
 from .secrets import decryptIfNeeded, encryptSecret
 
 
@@ -401,6 +401,52 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
         "error": errorMessage,
         "result": result,
     }
+
+
+def sendCurrentPassportSlotEmail(caseId: int, userId: int | None = None) -> dict[str, Any]:
+    params: tuple[Any, ...] = (caseId,)
+    userFilter = ""
+    if userId is not None:
+        userFilter = "AND c.user_id = ?"
+        params = (caseId, userId)
+    with getConnection() as connection:
+        row = connection.execute(
+            f"""
+            SELECT m.*, c.user_id, c.display_name, c.application_num, c.receive_email, c.sender_mode
+            FROM passport_slot_monitors m
+            JOIN ceac_cases c ON c.id = m.case_id
+            WHERE m.case_id = ? {userFilter}
+            """,
+            params,
+        ).fetchone()
+        if not row:
+            return {"success": False, "error": "护照预约监控不存在，请先保存 UID/HAL"}
+        smtpConfig = connection.execute("SELECT * FROM smtp_configs WHERE user_id = ?", (row["user_id"],)).fetchone()
+    identifier = decryptIfNeeded(row["identifier_encrypted"]) or ""
+    resultJson = decryptIfNeeded(row.get("last_result_json") or "") or ""
+    result = json.loads(resultJson) if resultJson else {}
+    slots = normalizeSlots(result) if isinstance(result, dict) else []
+    rawSummary = summarizePayload(result) if result else (row["last_error_message"] or "尚未执行过 GTS slot 查询。")
+    case = {
+        "display_name": row["display_name"],
+        "application_num": decryptIfNeeded(row["application_num"]) or row["application_num"],
+        "receive_email": decryptIfNeeded(row["receive_email"]) or row["receive_email"],
+        "sender_mode": row["sender_mode"],
+    }
+    try:
+        sendPassportSlotStatusEmail(
+            case,
+            smtpConfig,
+            identifierMasked=maskIdentifier(identifier),
+            fetchedAt=row["last_checked_at"] or utcNowIso(),
+            slotLines=formatSlotLines(slots),
+            rawSummary=rawSummary,
+            hasSlots=bool(slots),
+            isTest=True,
+        )
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    return {"success": True, "error": ""}
 
 
 def enqueuePassportSlotQuery(caseId: int, triggerType: str, userId: int | None = None) -> dict[str, Any] | None:

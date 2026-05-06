@@ -811,6 +811,12 @@ select:focus {
   margin-bottom: 16px;
 }
 
+.inline-monitor-form .button {
+  min-width: 116px;
+  min-height: 42px;
+  padding-block: 8px;
+}
+
 .mini-history {
   display: grid;
   gap: 8px;

@@ -320,6 +320,9 @@ const translations = {
     passportSlotEnabled: "GTS monitor enabled.",
     passportSlotDisabled: "GTS monitor disabled.",
     passportSlotManualQuery: "Check slots now",
+    passportSlotTestEmail: "Test GTS email",
+    passportSlotTestEmailSending: "Sending GTS monitor test email.",
+    passportSlotTestEmailSent: "GTS monitor test email sent.",
     passportSlotQuerying: "Querying GTS slots. Please wait.",
     passportSlotFound: "GTS slot query completed: available slots found.",
     passportSlotNotFound: "GTS slot query completed: no available slot.",
@@ -455,6 +458,9 @@ const translations = {
     passportSlotEnabled: "已开启 GTS 监控。",
     passportSlotDisabled: "已关闭 GTS 监控。",
     passportSlotManualQuery: "立即查询 slot",
+    passportSlotTestEmail: "测试 GTS 邮件",
+    passportSlotTestEmailSending: "正在发送 GTS 监控测试邮件。",
+    passportSlotTestEmailSent: "GTS 监控测试邮件已发送。",
     passportSlotQuerying: "正在查询 GTS slot，请稍候。",
     passportSlotFound: "GTS slot 查询完成：发现可预约时间。",
     passportSlotNotFound: "GTS slot 查询完成：暂无可预约时间。",
@@ -1016,6 +1022,22 @@ export function App() {
     }
   }
 
+  async function sendPassportSlotTestEmail(caseId: number) {
+    setIsBusy(true);
+    setMessage(t("passportSlotTestEmailSending"));
+    try {
+      await requestJson<{ success: boolean; error: string }>(`/api/cases/${caseId}/passport-slot-monitor/test-email`, {
+        method: "POST",
+        body: "{}",
+      });
+      setMessage(t("passportSlotTestEmailSent"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function removeCase(caseId: number) {
     await requestJson<{ ok: boolean }>(`/api/cases/${caseId}`, { method: "DELETE", body: "{}" });
     setSelectedCaseId(null);
@@ -1271,6 +1293,7 @@ export function App() {
                     saveMonitor={savePassportSlotMonitor}
                     toggleMonitor={togglePassportSlotMonitor}
                     runQuery={runPassportSlotQuery}
+                    sendTestEmail={sendPassportSlotTestEmail}
                     isBusy={isBusy}
                     t={t}
                     languageMode={languageMode}
@@ -1406,6 +1429,7 @@ function PassportSlotMonitorPanel(props: {
   saveMonitor: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   toggleMonitor: (targetCase: CeacCase, targetMonitor: PassportSlotMonitor) => Promise<void>;
   runQuery: (caseId: number) => Promise<void>;
+  sendTestEmail: (caseId: number) => Promise<void>;
   isBusy: boolean;
   t: (key: TranslationKey) => string;
   languageMode: LanguageMode;
@@ -1472,6 +1496,14 @@ function PassportSlotMonitorPanel(props: {
               disabled={props.isBusy}
             >
               <Activity size={16} /> {props.t("passportSlotManualQuery")}
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => props.sendTestEmail(props.selectedCase.id)}
+              disabled={props.isBusy}
+            >
+              <Mail size={16} /> {props.t("passportSlotTestEmail")}
             </button>
           </div>
           <div className="mini-history">

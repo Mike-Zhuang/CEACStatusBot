@@ -28,6 +28,7 @@ from .passport_slot_service import (
     getPassportSlotMonitor,
     listPassportSlotHistory,
     patchPassportSlotMonitor,
+    sendCurrentPassportSlotEmail,
     upsertPassportSlotMonitor,
 )
 from .schemas import (
@@ -416,6 +417,14 @@ def apiTestPassportSlotMonitor(caseId: int, user: dict = Depends(currentUserDepe
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="护照预约监控不存在")
     return {"jobId": job["id"], "status": job["status"]}
+
+
+@app.post("/api/cases/{caseId}/passport-slot-monitor/test-email")
+def apiTestPassportSlotMonitorEmail(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    payload = sendCurrentPassportSlotEmail(caseId, int(user["id"]))
+    if not payload["success"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=payload["error"])
+    return payload
 
 
 @app.get("/api/admin/users")
