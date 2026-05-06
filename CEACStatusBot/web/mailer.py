@@ -220,7 +220,7 @@ def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, A
             "",
             "该档案进入 Issued 已超过一周，且你尚未在站内停止自动查询。",
             "系统已按策略自动关闭该档案的自动查询，避免继续请求 CEAC。",
-            "你仍然可以登录网站，在档案详情页手动执行快速查询。",
+            "你仍然可以登录网站，在档案详情页手动执行立即查询。",
         ],
     )
     sendCaseEmail(case, smtpConfig, subject, body)

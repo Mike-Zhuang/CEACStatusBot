@@ -99,6 +99,14 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
 
 如果 `queued` 或 `running` 长时间积压，先检查 Worker 服务和日志。
 
+非管理员账号的 CEAC 立即查询和 GTS 立即查询 slot 共用每日手动查询额度，默认由 `DAILY_MANUAL_QUERY_LIMIT=20` 控制；管理员账号不受限制。查看当天手动查询量：
+
+```bash
+sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
+  ".headers on" ".mode column" \
+  "select u.email, count(*) as manual_queries from query_jobs j join ceac_cases c on c.id = j.case_id join users u on u.id = c.user_id where j.trigger_type in ('manual', 'passport_slot_manual') and j.created_at >= datetime('now', 'start of day') group by u.id order by manual_queries desc;"
+```
+
 GTS 护照预约监控任务会使用 `passport_slot_manual` 或 `passport_slot_automatic` 触发类型：
 
 ```bash

@@ -53,6 +53,7 @@ CORS_ORIGINS=https://ceac.mikezhuang.cn
 CSRF_TRUSTED_ORIGINS=https://ceac.mikezhuang.cn
 COOKIE_SECURE=true
 WORKER_POLL_INTERVAL_SECONDS=3
+DAILY_MANUAL_QUERY_LIMIT=20
 SEED_DEFAULT_USERS=false
 ```
 
@@ -181,5 +182,5 @@ nginx -t
 - SQLite、`backend.env`、主密钥文件权限正确。
 - 后端、Worker、Nginx 均正常。
 - 管理员后台可加载用户资料、查询日志和系统发信配置。
-- 快速查询会进入队列并由 Worker 完成。
+- 立即查询会进入队列并由 Worker 完成；非管理员账号达到 `DAILY_MANUAL_QUERY_LIMIT` 后会收到 429 提示。
 - Approved/Issued 档案详情页可保存 UID/HAL 并创建 GTS 护照预约监控；Worker 日志中可看到 `passport_slot_manual` 或 `passport_slot_automatic` 任务。

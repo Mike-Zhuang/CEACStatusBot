@@ -360,7 +360,7 @@ def sendCurrentStatusEmail(caseId: int, userId: int | None = None) -> dict[str, 
             (caseId,),
         ).fetchone()
     if not latest:
-        return {"success": False, "error": "暂无现有状态，请先快速查询一次"}
+        return {"success": False, "error": "暂无现有状态，请先立即查询一次"}
     result = {
         "success": True,
         "visa_type": latest["visa_type"],

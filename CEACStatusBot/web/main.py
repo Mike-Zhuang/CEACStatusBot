@@ -111,6 +111,37 @@ def listCasesForQueryRuns(rows: list[dict]) -> list[dict]:
     return runs
 
 
+def enforceDailyManualQueryLimit(user: dict) -> None:
+    if user.get("role") == "admin":
+        return
+    now = datetime.now(UTC)
+    todayStart = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrowStart = todayStart + timedelta(days=1)
+    with getConnection() as connection:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS query_count
+            FROM query_jobs j
+            JOIN ceac_cases c ON c.id = j.case_id
+            WHERE c.user_id = ?
+              AND j.trigger_type IN ('manual', 'passport_slot_manual')
+              AND j.created_at >= ?
+              AND j.created_at < ?
+            """,
+            (
+                int(user["id"]),
+                todayStart.isoformat(),
+                tomorrowStart.isoformat(),
+            ),
+        ).fetchone()
+    queryCount = int(row["query_count"] if row else 0)
+    if queryCount >= settings.dailyManualQueryLimit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"今日立即查询次数已达上限（{settings.dailyManualQueryLimit} 次），请明天再试。",
+        )
+
+
 def runDueCases() -> None:
     try:
         queued = enqueueDueCases()
@@ -358,6 +389,7 @@ def apiHistory(caseId: int, user: dict = Depends(currentUserDependency)) -> dict
 
 @app.post("/api/cases/{caseId}/test-query")
 def apiTestQuery(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    enforceDailyManualQueryLimit(user)
     job = enqueueCaseQuery(caseId, "manual", int(user["id"]))
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="签证档案不存在")
@@ -424,6 +456,7 @@ def apiPatchPassportSlotMonitor(caseId: int, payload: PassportSlotMonitorPatch, 
 
 @app.post("/api/cases/{caseId}/passport-slot-monitor/test-query")
 def apiTestPassportSlotMonitor(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    enforceDailyManualQueryLimit(user)
     job = enqueuePassportSlotQuery(caseId, "passport_slot_manual", int(user["id"]))
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="护照预约监控不存在")
