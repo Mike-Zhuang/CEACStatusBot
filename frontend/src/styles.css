@@ -20,6 +20,8 @@
   --brand-secure: #7a7fad;
   
   --semantic-success: #27a644;
+  --semantic-approved: #27a644;
+  --semantic-issued: #2f81f7;
   --danger: #e5484d;
   --semantic-overlay: #000000;
   
@@ -51,6 +53,8 @@
   --brand-secure: #7a7fad;
   
   --semantic-success: #27a644;
+  --semantic-approved: #15803d;
+  --semantic-issued: #2563eb;
   --danger: #e5484d;
   --semantic-overlay: rgba(255, 255, 255, 0.8);
   
@@ -503,6 +507,7 @@ select:focus {
 
 .brand-name {
   min-width: 0;
+  max-width: clamp(96px, 18vw, 180px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -738,6 +743,56 @@ select:focus {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
+.status-badge.status-refused {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.status-badge.status-approved {
+  color: var(--semantic-approved);
+  background: color-mix(in srgb, var(--semantic-approved) 12%, transparent);
+}
+
+.status-badge.status-issued {
+  color: var(--semantic-issued);
+  background: color-mix(in srgb, var(--semantic-issued) 12%, transparent);
+}
+
+.status-badge.metric-status {
+  justify-self: start;
+}
+
+.metric {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.metric .caption {
+  color: var(--ink-subtle);
+}
+
+.metric .body-sm {
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.metric-grid {
+  align-items: start;
+}
+
+.action-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.action-notice span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Timeline */
 .timeline {
   display: grid;
@@ -811,7 +866,8 @@ select:focus {
 
 .admin-case-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(130px, 0.8fr) minmax(100px, 0.6fr);
+  grid-template-columns: minmax(140px, 1fr) minmax(130px, 0.8fr) auto;
+  align-items: center;
   gap: 12px;
   padding: 8px 10px;
   border: 1px solid var(--hairline);
@@ -828,6 +884,14 @@ select:focus {
   border: 1px solid var(--hairline);
   border-radius: 8px;
   background: var(--canvas);
+}
+
+.log-table {
+  display: table;
+}
+
+.log-card-list {
+  display: none;
 }
 
 .log-table {
@@ -1045,7 +1109,7 @@ select:focus {
 
   .row-actions {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 38px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
     gap: 8px;
     width: 100%;
   }
@@ -1057,9 +1121,70 @@ select:focus {
   }
 
   .row-actions .icon-button {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
     justify-self: end;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .metric {
+    padding: 10px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: var(--canvas);
+  }
+
+  .action-notice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .action-notice .button {
+    width: 100%;
+  }
+
+  .log-table {
+    display: none;
+  }
+
+  .log-table-wrap {
+    overflow: hidden;
+  }
+
+  .log-card-list {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .log-card {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: var(--surface-1);
+    min-width: 0;
+  }
+
+  .log-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--ink-subtle);
+    font-size: 13px;
+  }
+
+  .log-card-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .official-form-note {
@@ -1074,6 +1199,7 @@ select:focus {
 
   .top-nav {
     padding: 8px 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .brand-lockup {
@@ -1086,7 +1212,7 @@ select:focus {
   }
 
   .brand-name {
-    max-width: 112px;
+    max-width: 86px;
   }
 
   .language-toggle,
@@ -1125,6 +1251,7 @@ select:focus {
   .case-row {
     align-items: start;
     grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .status-badge {
@@ -1136,7 +1263,7 @@ select:focus {
 
 @media (max-width: 360px) {
   .brand-name {
-    max-width: 0;
+    display: none;
   }
 
   .row-actions {

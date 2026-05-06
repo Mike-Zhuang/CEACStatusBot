@@ -211,6 +211,9 @@ const translations = {
     noLogs: "No logs yet",
     noStatus: "Not ready",
     noStatusChange: "No status change",
+    issuedSlowQueryNotice: "This profile is Issued. Automatic checks have slowed to once per day.",
+    stopAutomaticQuery: "Stop automatic checks",
+    automaticQueryStopped: "Automatic checks stopped. You can still run quick queries manually.",
     notVerified: "Not verified",
     newProfile: "New",
     nextCheckAt: "Next automatic query",
@@ -323,6 +326,9 @@ const translations = {
     noLogs: "暂无日志",
     noStatus: "未就绪",
     noStatusChange: "未发生状态变更",
+    issuedSlowQueryNotice: "此档案已进入 Issued，自动查询已降频为每天一次。",
+    stopAutomaticQuery: "停止自动查询",
+    automaticQueryStopped: "已停止自动查询，你仍然可以手动快速查询。",
     notVerified: "未验证",
     newProfile: "新增",
     nextCheckAt: "下次自动查询",
@@ -439,6 +445,29 @@ function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryRun["trigge
     return t("triggerAutomatic");
   }
   return t("triggerUnknown");
+}
+
+function getStatusTone(status: string | null | undefined): "issued" | "approved" | "refused" | "" {
+  const normalized = (status ?? "").trim().toLowerCase();
+  if (normalized === "issued") {
+    return "issued";
+  }
+  if (normalized === "approved") {
+    return "approved";
+  }
+  if (normalized === "refused") {
+    return "refused";
+  }
+  return "";
+}
+
+function getStatusBadgeClass(status: string | null | undefined, extraClass = ""): string {
+  const tone = getStatusTone(status);
+  return ["status-badge", tone ? `status-${tone}` : "", extraClass].filter(Boolean).join(" ");
+}
+
+function isIssuedStatus(status: string | null | undefined): boolean {
+  return getStatusTone(status) === "issued";
 }
 
 function getRememberedCredentials(): { email: string; password: string; remember: boolean } {
@@ -789,6 +818,23 @@ export function App() {
     }
   }
 
+  async function stopAutomaticQuery(targetCase: CeacCase) {
+    setIsBusy(true);
+    setMessage("");
+    try {
+      await requestJson<{ case: CeacCase }>(`/api/cases/${targetCase.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isEnabled: false }),
+      });
+      await loadCases();
+      setMessage(t("automaticQueryStopped"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function removeCase(caseId: number) {
     await requestJson<{ ok: boolean }>(`/api/cases/${caseId}`, { method: "DELETE", body: "{}" });
     setSelectedCaseId(null);
@@ -952,7 +998,7 @@ export function App() {
                         <div className="case-name">{item.displayName}</div>
                         <div className="case-meta">{item.applicationNum || t("missingCaseNumber")}</div>
                       </div>
-                      <span className={`status-badge ${item.lastStatus === "Issued" ? "success" : item.lastStatus === "Refused" ? "error" : ""}`}>{item.lastStatus ?? t("waitFirstQuery")}</span>
+                      <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? t("waitFirstQuery")}</span>
                     </div>
                   ))}
                   {cases.length === 0 && <p className="empty-state">{t("noCases")}</p>}
@@ -990,19 +1036,31 @@ export function App() {
                     </div>
                     
                     <div className="stack" style={{ marginBottom: "24px" }}>
-                      <div className="two-col">
+                      {isIssuedStatus(selectedCase.lastStatus) && selectedCase.isEnabled && (
+                        <div className="notice action-notice">
+                          <span>{t("issuedSlowQueryNotice")}</span>
+                          <button className="button secondary" onClick={() => stopAutomaticQuery(selectedCase)} disabled={isBusy}>
+                            {t("stopAutomaticQuery")}
+                          </button>
+                        </div>
+                      )}
+                      <div className="two-col metric-grid">
                         <Metric label={t("locationMetric")} value={selectedCase.location} />
                         <Metric label={`${t("applicationId")} / ${t("passport")}`} value={`${selectedCase.applicationNum} / ${selectedCase.passportNumber}`} />
                       </div>
-                      <div className="two-col">
+                      <div className="two-col metric-grid">
                         <Metric label={t("notifyEmail")} value={selectedCase.receiveEmail} />
-                        <Metric label={t("status")} value={selectedCase.lastStatus || t("noStatus")} />
+                        <Metric label={t("status")}>
+                          <span className={getStatusBadgeClass(selectedCase.lastStatus, "metric-status")}>
+                            {selectedCase.lastStatus || t("noStatus")}
+                          </span>
+                        </Metric>
                       </div>
-                      <div className="two-col">
+                      <div className="two-col metric-grid">
                         <Metric label={t("lastCheckedAt")} value={formatTime(selectedCase.lastCheckedAt, languageMode)} />
                         <Metric label={t("lastCheckMode")} value={formatTriggerType(selectedCase.lastTriggerType, t)} />
                       </div>
-                      <div className="two-col">
+                      <div className="two-col metric-grid">
                         <Metric label={t("nextCheckAt")} value={formatTime(selectedCase.nextCheckAt, languageMode)} />
                         <Metric label={t("emailPushSetting")} value={selectedCase.emailNotificationsEnabled ? t("emailPushOn") : t("emailPushOff")} />
                       </div>
@@ -1033,7 +1091,7 @@ export function App() {
                         <div key={record.id} className="timeline-item">
                           <div className="timeline-header">
                             <span className="timeline-time">{formatTime(record.fetchedAt, languageMode)}</span>
-                            <span className={`status-badge ${record.status === "Issued" ? "success" : record.status === "Refused" ? "error" : ""}`}>{record.status}</span>
+                            <span className={getStatusBadgeClass(record.status)}>{record.status}</span>
                           </div>
                           <div className="timeline-desc">{record.description}</div>
                         </div>
@@ -1114,11 +1172,11 @@ function LanguageButton(props: { languageMode: LanguageMode; setLanguageMode: (m
   );
 }
 
-function Metric(props: { label: string; value: string }) {
+function Metric(props: { label: string; value?: string; children?: React.ReactNode }) {
   return (
-    <div style={{ display: 'grid', gap: '4px' }}>
-      <div className="caption" style={{ color: 'var(--ink-subtle)' }}>{props.label}</div>
-      <div className="body-sm">{props.value}</div>
+    <div className="metric">
+      <div className="caption">{props.label}</div>
+      <div className="body-sm">{props.children ?? props.value}</div>
     </div>
   );
 }
@@ -1305,7 +1363,7 @@ function AdminPanel(props: {
                     <div key={item.id} className="admin-case-row">
                       <span>{item.displayName}</span>
                       <span className="mono-text">{item.applicationNum}</span>
-                      <span>{item.lastStatus ?? props.t("waitFirstQuery")}</span>
+                      <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? props.t("waitFirstQuery")}</span>
                     </div>
                   ))}
                   {ownedCases.length === 0 && <p className="empty-state compact">{props.t("noCases")}</p>}
@@ -1349,11 +1407,43 @@ function AdminPanel(props: {
                     </span>
                   </td>
                   <td className="mono-text">{run.duration_ms}ms</td>
-                  <td>{run.status || run.error_message || props.t("noStatusChange")}</td>
+                  <td>
+                    {run.status ? (
+                      <span className={getStatusBadgeClass(run.status)}>{run.status}</span>
+                    ) : (
+                      run.error_message || props.t("noStatusChange")
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <div className="log-card-list">
+            {props.queryRuns.map((run) => (
+              <div key={run.id} className="log-card">
+                <div className="log-card-header">
+                  <span>{formatTime(run.finished_at, props.languageMode)}</span>
+                  <span className={`status-badge ${run.success ? "success" : "error"}`}>
+                    {run.success ? props.t("success") : props.t("error")}
+                  </span>
+                </div>
+                <div className="log-card-grid">
+                  <Metric label={props.t("executor")} value={run.user_email} />
+                  <Metric label={props.t("profile")} value={run.display_name} />
+                  <Metric label={props.t("applicationId")} value={run.application_num} />
+                  <Metric label={props.t("lastCheckMode")} value={formatTriggerType(run.trigger_type, props.t)} />
+                  <Metric label={props.t("duration")} value={`${run.duration_ms}ms`} />
+                  <Metric label={props.t("changeContent")}>
+                    {run.status ? (
+                      <span className={getStatusBadgeClass(run.status, "metric-status")}>{run.status}</span>
+                    ) : (
+                      run.error_message || props.t("noStatusChange")
+                    )}
+                  </Metric>
+                </div>
+              </div>
+            ))}
+          </div>
           {props.queryRuns.length === 0 && <p className="empty-state">{props.t("noLogs")}</p>}
         </div>
       </section>

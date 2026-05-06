@@ -15,8 +15,15 @@ from .secrets import decryptIfNeeded, encryptSecret, isEncryptedSecret
 SENSITIVE_CASE_COLUMNS = {"application_num", "passport_number", "surname", "receive_email"}
 
 
-def computeNextCheckAt(base: datetime | None = None) -> str:
+def isIssuedStatus(status: str | None) -> bool:
+    return (status or "").strip().lower() == "issued"
+
+
+def computeNextCheckAt(base: datetime | None = None, status: str | None = None) -> str:
     base = base or datetime.now(UTC)
+    if isIssuedStatus(status):
+        nextDay = (base + timedelta(days=1)).replace(second=0, microsecond=0)
+        return nextDay.replace(minute=random.randint(0, 59)).isoformat()
     nextHour = (base + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
     return (nextHour + timedelta(minutes=random.randint(0, 59))).isoformat()
 
@@ -300,7 +307,7 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                 SET last_checked_at = ?, next_check_at = ?, last_status_id = ?, last_trigger_type = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (finishedIso, computeNextCheckAt(finished), statusId, triggerType, finishedIso, caseId),
+                (finishedIso, computeNextCheckAt(finished, str(result.get("status", ""))), statusId, triggerType, finishedIso, caseId),
             )
         else:
             connection.execute(
