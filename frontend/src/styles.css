@@ -793,6 +793,12 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+.action-notice .button {
+  flex: 0 0 auto;
+  min-width: 136px;
+  white-space: nowrap;
+}
+
 .passport-slot-panel.ready {
   border-color: color-mix(in srgb, var(--semantic-approved) 35%, var(--hairline));
 }
@@ -1235,6 +1241,8 @@ select:focus {
 
   .action-notice .button {
     width: 100%;
+    min-width: 0;
+    white-space: nowrap;
   }
 
   .log-table {
