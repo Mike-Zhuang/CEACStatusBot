@@ -8,6 +8,11 @@ from CEACStatusBot.request import query_status
 
 from .database import getConnection, utcNowIso
 from .mailer import sendCaseNotification, sendIssuedAutoStopNotification
+from .passport_slot_service import (
+    enqueueDuePassportSlotMonitors,
+    isPassportSlotTrigger,
+    runPassportSlotQuery,
+)
 from .schemas import CeacCaseInput, CeacCasePatch
 from .secrets import decryptIfNeeded, encryptSecret, isEncryptedSecret
 
@@ -438,6 +443,26 @@ def migrateEncryptedFields() -> None:
                     (encryptSecret(str(value)), row["id"]),
                 )
 
+        for row in connection.execute("SELECT id, identifier_encrypted, last_result_json FROM passport_slot_monitors").fetchall():
+            if row["identifier_encrypted"] and not isEncryptedSecret(row["identifier_encrypted"]):
+                connection.execute(
+                    "UPDATE passport_slot_monitors SET identifier_encrypted = ? WHERE id = ?",
+                    (encryptSecret(str(row["identifier_encrypted"])), row["id"]),
+                )
+            if row["last_result_json"] and not isEncryptedSecret(row["last_result_json"]):
+                connection.execute(
+                    "UPDATE passport_slot_monitors SET last_result_json = ? WHERE id = ?",
+                    (encryptSecret(str(row["last_result_json"])), row["id"]),
+                )
+
+        for row in connection.execute("SELECT id, raw_payload FROM passport_slot_history").fetchall():
+            value = row["raw_payload"]
+            if value and not isEncryptedSecret(value):
+                connection.execute(
+                    "UPDATE passport_slot_history SET raw_payload = ? WHERE id = ?",
+                    (encryptSecret(str(value)), row["id"]),
+                )
+
 
 def normalizeQueryJob(row: dict[str, Any]) -> dict[str, Any]:
     resultJson = decryptIfNeeded(row.get("result_json") or "") or ""
@@ -471,7 +496,9 @@ def enqueueCaseQuery(caseId: int, triggerType: str, userId: int | None = None) -
         existing = connection.execute(
             """
             SELECT * FROM query_jobs
-            WHERE case_id = ? AND status IN ('queued', 'running')
+            WHERE case_id = ?
+              AND trigger_type NOT LIKE 'passport_slot_%'
+              AND status IN ('queued', 'running')
             ORDER BY id DESC
             LIMIT 1
             """,
@@ -505,7 +532,9 @@ def enqueueDueCases(limit: int = 20) -> list[dict[str, Any]]:
               AND c.next_check_at <= ?
               AND NOT EXISTS (
                   SELECT 1 FROM query_jobs j
-                  WHERE j.case_id = c.id AND j.status IN ('queued', 'running')
+                  WHERE j.case_id = c.id
+                    AND j.trigger_type NOT LIKE 'passport_slot_%'
+                    AND j.status IN ('queued', 'running')
               )
             ORDER BY c.next_check_at ASC
             LIMIT ?
@@ -518,6 +547,7 @@ def enqueueDueCases(limit: int = 20) -> list[dict[str, Any]]:
         job = enqueueCaseQuery(int(row["id"]), "automatic")
         if job:
             queued.append(job)
+    queued.extend(enqueueDuePassportSlotMonitors(limit))
     return queued
 
 
@@ -641,7 +671,10 @@ def claimNextQueryJob(workerId: str | None = None) -> dict[str, Any] | None:
 def runQueryJob(job: dict[str, Any]) -> dict[str, Any]:
     nowIso = utcNowIso()
     try:
-        result = runCaseQuery(int(job["caseId"]), triggerType=str(job["triggerType"]))
+        if isPassportSlotTrigger(str(job["triggerType"])):
+            result = runPassportSlotQuery(int(job["caseId"]), triggerType=str(job["triggerType"]))
+        else:
+            result = runCaseQuery(int(job["caseId"]), triggerType=str(job["triggerType"]))
         status = "succeeded" if result.get("success") else "failed"
         errorMessage = str(result.get("error") or "")
     except Exception as exc:

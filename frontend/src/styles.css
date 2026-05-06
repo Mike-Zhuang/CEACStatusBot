@@ -793,6 +793,38 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+.passport-slot-panel.ready {
+  border-color: color-mix(in srgb, var(--semantic-approved) 35%, var(--hairline));
+}
+
+.inline-monitor-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mini-history {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.mini-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.mini-history-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Timeline */
 .timeline {
   display: grid;
@@ -1143,6 +1175,19 @@ select:focus {
     width: 40px;
     height: 40px;
     justify-self: end;
+  }
+
+  .inline-monitor-form {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-monitor-form .button {
+    width: 100%;
+  }
+
+  .mini-history-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   .metric-grid {

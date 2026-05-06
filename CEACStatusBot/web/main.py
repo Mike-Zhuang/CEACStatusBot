@@ -23,12 +23,21 @@ from .case_service import (
 from .config import getSettings
 from .database import getConnection, initializeDatabase, utcNowIso
 from .mailer import getSystemSmtpConfigPublic, saveSystemSmtpConfig, sendSystemEmail
+from .passport_slot_service import (
+    enqueuePassportSlotQuery,
+    getPassportSlotMonitor,
+    listPassportSlotHistory,
+    patchPassportSlotMonitor,
+    upsertPassportSlotMonitor,
+)
 from .schemas import (
     CeacCaseInput,
     CeacCasePatch,
     LoginRequest,
     PasswordResetCodeRequest,
     PasswordResetRequest,
+    PassportSlotMonitorInput,
+    PassportSlotMonitorPatch,
     ProfileUpdateRequest,
     RegisterRequest,
     SendCodeRequest,
@@ -370,6 +379,43 @@ def apiTestEmail(caseId: int, user: dict = Depends(currentUserDependency)) -> di
     if not payload["success"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=payload["error"])
     return payload
+
+
+@app.get("/api/cases/{caseId}/passport-slot-monitor")
+def apiPassportSlotMonitor(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    if not getCase(caseId, int(user["id"])):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="签证档案不存在")
+    return {
+        "monitor": getPassportSlotMonitor(caseId, int(user["id"])),
+        "history": listPassportSlotHistory(caseId, int(user["id"])),
+    }
+
+
+@app.put("/api/cases/{caseId}/passport-slot-monitor")
+def apiSavePassportSlotMonitor(caseId: int, payload: PassportSlotMonitorInput, user: dict = Depends(currentUserDependency)) -> dict:
+    try:
+        monitor = upsertPassportSlotMonitor(caseId, int(user["id"]), payload.identifier, payload.isEnabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not monitor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="签证档案不存在")
+    return {"monitor": monitor}
+
+
+@app.patch("/api/cases/{caseId}/passport-slot-monitor")
+def apiPatchPassportSlotMonitor(caseId: int, payload: PassportSlotMonitorPatch, user: dict = Depends(currentUserDependency)) -> dict:
+    monitor = patchPassportSlotMonitor(caseId, int(user["id"]), payload.isEnabled)
+    if not monitor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="护照预约监控不存在")
+    return {"monitor": monitor}
+
+
+@app.post("/api/cases/{caseId}/passport-slot-monitor/test-query")
+def apiTestPassportSlotMonitor(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    job = enqueuePassportSlotQuery(caseId, "passport_slot_manual", int(user["id"]))
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="护照预约监控不存在")
+    return {"jobId": job["id"], "status": job["status"]}
 
 
 @app.get("/api/admin/users")

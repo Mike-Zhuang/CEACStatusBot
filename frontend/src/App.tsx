@@ -66,7 +66,7 @@ interface QueryRun {
   user_email: string;
   started_at: string;
   finished_at: string;
-  trigger_type: "manual" | "automatic" | "unknown";
+  trigger_type: "manual" | "automatic" | "passport_slot_manual" | "passport_slot_automatic" | "unknown";
   success: number;
   status: string | null;
   error_message: string;
@@ -76,7 +76,7 @@ interface QueryRun {
 interface QueryJob {
   id: number;
   caseId: number;
-  triggerType: "manual" | "automatic";
+  triggerType: "manual" | "automatic" | "passport_slot_manual" | "passport_slot_automatic";
   status: "queued" | "running" | "succeeded" | "failed";
   attempts: number;
   errorMessage: string;
@@ -89,6 +89,38 @@ interface QueryJob {
   updatedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+interface PassportSlotMonitor {
+  id: number;
+  caseId: number;
+  identifier: string;
+  identifierMasked: string;
+  isEnabled: boolean;
+  nextCheckAt: string | null;
+  lastCheckedAt: string | null;
+  lastSlotFingerprint: string;
+  lastSlotCount: number;
+  lastResult: {
+    success?: boolean;
+    availableSlots?: unknown[];
+    availableDates?: unknown[];
+    raw?: unknown;
+    error?: string;
+  } | null;
+  lastErrorMessage: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PassportSlotHistoryItem {
+  id: number;
+  caseId: number;
+  slotFingerprint: string;
+  slotCount: number;
+  rawPayload: Record<string, unknown>;
+  fetchedAt: string;
+  notificationSent: boolean;
 }
 
 interface AdminUser {
@@ -278,6 +310,26 @@ const translations = {
     queryHint: "Please select a location and enter your Application ID or Case Number.",
     queryInProgress: "Querying CEAC. Please wait.",
     pre2022Note: "NOTE: For applicants who completed their forms prior to January 1, 2022, please put NA into the Passport and Surname fields.",
+    passportSlotMonitor: "Passport appointment monitor",
+    passportSlotIntro: "Enter your UID or HAL after Approved or Issued to watch GTS appointment slots.",
+    passportSlotEarlyHint: "You can configure this now, but GTS usually returns valid tokens after Approved or Issued.",
+    passportSlotIdentifier: "UID or HAL",
+    passportSlotIdentifierPlaceholder: "106417002 or HAL0123456789",
+    passportSlotSave: "Save monitor",
+    passportSlotSaved: "Passport appointment monitor saved.",
+    passportSlotEnabled: "GTS monitor enabled.",
+    passportSlotDisabled: "GTS monitor disabled.",
+    passportSlotManualQuery: "Check slots now",
+    passportSlotQuerying: "Querying GTS slots. Please wait.",
+    passportSlotFound: "GTS slot query completed: available slots found.",
+    passportSlotNotFound: "GTS slot query completed: no available slot.",
+    passportSlotChanged: "GTS slot result changed.",
+    passportSlotConfigured: "Configured identifier",
+    passportSlotLastCount: "Last slot count",
+    passportSlotLastError: "Last GTS error",
+    passportSlotHistory: "Slot change history",
+    noPassportSlotMonitor: "No UID/HAL monitor yet",
+    noPassportSlotHistory: "No slot changes yet",
   },
   zh: {
     admin: "管理员",
@@ -393,6 +445,26 @@ const translations = {
     queryHint: "请选择面签地点，并输入你的 Application ID 或 Case Number。",
     queryInProgress: "正在查询 CEAC，请稍候。",
     pre2022Note: "注意：如果你在 2022 年 1 月 1 日之前完成表格，请在护照号码和姓氏字段填写 NA。",
+    passportSlotMonitor: "护照预约监控",
+    passportSlotIntro: "Approved 或 Issued 后填写 UID/HAL，系统会轮询 GTS 可预约时间。",
+    passportSlotEarlyHint: "你可以提前配置；但 GTS 通常在 Approved 或 Issued 后才会返回有效 token。",
+    passportSlotIdentifier: "UID 或 HAL",
+    passportSlotIdentifierPlaceholder: "106417002 或 HAL0123456789",
+    passportSlotSave: "保存监控",
+    passportSlotSaved: "护照预约监控已保存。",
+    passportSlotEnabled: "已开启 GTS 监控。",
+    passportSlotDisabled: "已关闭 GTS 监控。",
+    passportSlotManualQuery: "立即查询 slot",
+    passportSlotQuerying: "正在查询 GTS slot，请稍候。",
+    passportSlotFound: "GTS slot 查询完成：发现可预约时间。",
+    passportSlotNotFound: "GTS slot 查询完成：暂无可预约时间。",
+    passportSlotChanged: "GTS slot 结果发生变化。",
+    passportSlotConfigured: "已配置编号",
+    passportSlotLastCount: "最近 slot 数量",
+    passportSlotLastError: "最近 GTS 错误",
+    passportSlotHistory: "slot 变化历史",
+    noPassportSlotMonitor: "尚未配置 UID/HAL 监控",
+    noPassportSlotHistory: "暂无 slot 变化记录",
   },
 } as const;
 
@@ -438,6 +510,12 @@ function formatTime(value: string | null, languageMode: LanguageMode): string {
 }
 
 function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryRun["trigger_type"], t: (key: TranslationKey) => string): string {
+  if (value === "passport_slot_manual") {
+    return `${t("passportSlotMonitor")} · ${t("triggerManual")}`;
+  }
+  if (value === "passport_slot_automatic") {
+    return `${t("passportSlotMonitor")} · ${t("triggerAutomatic")}`;
+  }
   if (value === "manual") {
     return t("triggerManual");
   }
@@ -470,6 +548,11 @@ function isIssuedStatus(status: string | null | undefined): boolean {
   return getStatusTone(status) === "issued";
 }
 
+function isPassportSlotReadyStatus(status: string | null | undefined): boolean {
+  const tone = getStatusTone(status);
+  return tone === "approved" || tone === "issued";
+}
+
 function getRememberedCredentials(): { email: string; password: string; remember: boolean } {
   const enabled = localStorage.getItem("rememberLogin") === "true";
   return {
@@ -489,6 +572,9 @@ export function App() {
   const [adminCases, setAdminCases] = useState<CeacCase[]>([]);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [passportSlotMonitor, setPassportSlotMonitor] = useState<PassportSlotMonitor | null>(null);
+  const [passportSlotHistory, setPassportSlotHistory] = useState<PassportSlotHistoryItem[]>([]);
+  const [passportSlotIdentifier, setPassportSlotIdentifier] = useState("");
   const [queryRuns, setQueryRuns] = useState<QueryRun[]>([]);
   const [systemEmailConfig, setSystemEmailConfig] = useState<SystemEmailConfig | null>(null);
   const [systemEmailForm, setSystemEmailForm] = useState<SystemEmailForm>({
@@ -545,8 +631,12 @@ export function App() {
   useEffect(() => {
     if (selectedCase) {
       void loadHistory(selectedCase.id);
+      void loadPassportSlotMonitor(selectedCase.id);
     } else {
       setHistory([]);
+      setPassportSlotMonitor(null);
+      setPassportSlotHistory([]);
+      setPassportSlotIdentifier("");
     }
   }, [selectedCase?.id]);
 
@@ -561,6 +651,15 @@ export function App() {
   async function loadHistory(caseId: number) {
     const payload = await requestJson<{ history: HistoryItem[] }>(`/api/cases/${caseId}/history`);
     setHistory(payload.history);
+  }
+
+  async function loadPassportSlotMonitor(caseId: number) {
+    const payload = await requestJson<{ monitor: PassportSlotMonitor | null; history: PassportSlotHistoryItem[] }>(
+      `/api/cases/${caseId}/passport-slot-monitor`,
+    );
+    setPassportSlotMonitor(payload.monitor);
+    setPassportSlotHistory(payload.history);
+    setPassportSlotIdentifier(payload.monitor?.identifier ?? "");
   }
 
   async function loadAdminData() {
@@ -835,6 +934,88 @@ export function App() {
     }
   }
 
+  async function savePassportSlotMonitor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedCase) {
+      return;
+    }
+    setIsBusy(true);
+    setMessage("");
+    try {
+      const payload = await requestJson<{ monitor: PassportSlotMonitor }>(`/api/cases/${selectedCase.id}/passport-slot-monitor`, {
+        method: "PUT",
+        body: JSON.stringify({
+          identifier: passportSlotIdentifier,
+          isEnabled: passportSlotMonitor?.isEnabled ?? true,
+        }),
+      });
+      setPassportSlotMonitor(payload.monitor);
+      setPassportSlotIdentifier(payload.monitor.identifier);
+      await loadPassportSlotMonitor(selectedCase.id);
+      setMessage(t("passportSlotSaved"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function togglePassportSlotMonitor(targetCase: CeacCase, targetMonitor: PassportSlotMonitor) {
+    setIsBusy(true);
+    setMessage("");
+    try {
+      const payload = await requestJson<{ monitor: PassportSlotMonitor }>(`/api/cases/${targetCase.id}/passport-slot-monitor`, {
+        method: "PATCH",
+        body: JSON.stringify({ isEnabled: !targetMonitor.isEnabled }),
+      });
+      setPassportSlotMonitor(payload.monitor);
+      setMessage(!targetMonitor.isEnabled ? t("passportSlotEnabled") : t("passportSlotDisabled"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function runPassportSlotQuery(caseId: number) {
+    setIsBusy(true);
+    setMessage(t("passportSlotQuerying"));
+    try {
+      const payload = await requestJson<{ jobId: number; status: QueryJob["status"] }>(`/api/cases/${caseId}/passport-slot-monitor/test-query`, {
+        method: "POST",
+        body: "{}",
+      });
+      let job: QueryJob | null = null;
+      for (let index = 0; index < 60; index += 1) {
+        const jobPayload = await requestJson<{ job: QueryJob }>(`/api/query-jobs/${payload.jobId}`);
+        job = jobPayload.job;
+        if (job.status === "succeeded" || job.status === "failed") {
+          break;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
+      await loadPassportSlotMonitor(caseId);
+      if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
+        setMessage(t("passportSlotQuerying"));
+        return;
+      }
+      const result = job.result as (QueryJob["result"] & { slotCount?: number; notified?: boolean }) | null;
+      if (!result?.success) {
+        setMessage(job.errorMessage || result?.error || t("requestFailed"));
+        return;
+      }
+      if ((result.slotCount ?? 0) > 0) {
+        setMessage(result.changed ? t("passportSlotChanged") : t("passportSlotFound"));
+      } else {
+        setMessage(t("passportSlotNotFound"));
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function removeCase(caseId: number) {
     await requestJson<{ ok: boolean }>(`/api/cases/${caseId}`, { method: "DELETE", body: "{}" });
     setSelectedCaseId(null);
@@ -1081,6 +1262,20 @@ export function App() {
                     </div>
                   </section>
 
+                  <PassportSlotMonitorPanel
+                    selectedCase={selectedCase}
+                    monitor={passportSlotMonitor}
+                    history={passportSlotHistory}
+                    identifier={passportSlotIdentifier}
+                    setIdentifier={setPassportSlotIdentifier}
+                    saveMonitor={savePassportSlotMonitor}
+                    toggleMonitor={togglePassportSlotMonitor}
+                    runQuery={runPassportSlotQuery}
+                    isBusy={isBusy}
+                    t={t}
+                    languageMode={languageMode}
+                  />
+
                   <section className="panel">
                     <div className="panel-title">
                       <h2 className="subhead">{t("statusHistory")}</h2>
@@ -1178,6 +1373,123 @@ function Metric(props: { label: string; value?: string; children?: React.ReactNo
       <div className="caption">{props.label}</div>
       <div className="body-sm">{props.children ?? props.value}</div>
     </div>
+  );
+}
+
+function summarizePassportSlotResult(result: PassportSlotMonitor["lastResult"], languageMode: LanguageMode): string {
+  const slots = Array.isArray(result?.availableSlots)
+    ? result.availableSlots
+    : Array.isArray(result?.availableDates)
+      ? result.availableDates
+      : [];
+  if (!slots.length) {
+    return languageMode === "zh" ? "暂无可预约时间" : "No available slot";
+  }
+  return slots.slice(0, 3).map((slot) => {
+    if (slot && typeof slot === "object") {
+      const record = slot as Record<string, unknown>;
+      const parts = ["date", "time", "datetime", "dateTime", "startTime", "city", "location"]
+        .map((key) => record[key] ? `${key}: ${String(record[key])}` : "")
+        .filter(Boolean);
+      return parts.join("; ") || JSON.stringify(record);
+    }
+    return String(slot);
+  }).join(" | ");
+}
+
+function PassportSlotMonitorPanel(props: {
+  selectedCase: CeacCase;
+  monitor: PassportSlotMonitor | null;
+  history: PassportSlotHistoryItem[];
+  identifier: string;
+  setIdentifier: (value: string) => void;
+  saveMonitor: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  toggleMonitor: (targetCase: CeacCase, targetMonitor: PassportSlotMonitor) => Promise<void>;
+  runQuery: (caseId: number) => Promise<void>;
+  isBusy: boolean;
+  t: (key: TranslationKey) => string;
+  languageMode: LanguageMode;
+}) {
+  const isReadyStatus = isPassportSlotReadyStatus(props.selectedCase.lastStatus);
+  return (
+    <section className={`panel passport-slot-panel ${isReadyStatus ? "ready" : ""}`}>
+      <div className="panel-title">
+        <div>
+          <h2 className="subhead">{props.t("passportSlotMonitor")}</h2>
+          <p className="form-intro">
+            {isReadyStatus ? props.t("passportSlotIntro") : props.t("passportSlotEarlyHint")}
+          </p>
+        </div>
+        {props.monitor && (
+          <span className={`status-badge ${props.monitor.isEnabled ? "success" : ""}`}>
+            {props.monitor.isEnabled ? props.t("emailPushOn") : props.t("emailPushOff")}
+          </span>
+        )}
+      </div>
+
+      <form className="inline-monitor-form" onSubmit={props.saveMonitor}>
+        <label>
+          {props.t("passportSlotIdentifier")}
+          <input
+            value={props.identifier}
+            onChange={(event) => props.setIdentifier(event.target.value.trim().toUpperCase())}
+            placeholder={props.t("passportSlotIdentifierPlaceholder")}
+            required
+          />
+        </label>
+        <button className="button primary" disabled={props.isBusy}>
+          {props.t("passportSlotSave")}
+        </button>
+      </form>
+
+      {props.monitor ? (
+        <div className="stack">
+          <div className="two-col metric-grid">
+            <Metric label={props.t("passportSlotConfigured")} value={props.monitor.identifierMasked} />
+            <Metric label={props.t("passportSlotLastCount")} value={String(props.monitor.lastSlotCount)} />
+          </div>
+          <div className="two-col metric-grid">
+            <Metric label={props.t("lastCheckedAt")} value={formatTime(props.monitor.lastCheckedAt, props.languageMode)} />
+            <Metric label={props.t("nextCheckAt")} value={formatTime(props.monitor.nextCheckAt, props.languageMode)} />
+          </div>
+          <Metric label={props.t("changeContent")} value={summarizePassportSlotResult(props.monitor.lastResult, props.languageMode)} />
+          {props.monitor.lastErrorMessage && (
+            <Metric label={props.t("passportSlotLastError")} value={props.monitor.lastErrorMessage} />
+          )}
+          <div className="row-actions">
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => props.toggleMonitor(props.selectedCase, props.monitor!)}
+              disabled={props.isBusy}
+            >
+              {props.monitor.isEnabled ? props.t("passportSlotDisabled") : props.t("passportSlotEnabled")}
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => props.runQuery(props.selectedCase.id)}
+              disabled={props.isBusy}
+            >
+              <Activity size={16} /> {props.t("passportSlotManualQuery")}
+            </button>
+          </div>
+          <div className="mini-history">
+            <div className="caption">{props.t("passportSlotHistory")}</div>
+            {props.history.slice(0, 3).map((item) => (
+              <div key={item.id} className="mini-history-row">
+                <span>{formatTime(item.fetchedAt, props.languageMode)}</span>
+                <span>{item.slotCount} slot</span>
+                <span>{item.notificationSent ? props.t("emailPushOn") : props.t("noStatusChange")}</span>
+              </div>
+            ))}
+            {props.history.length === 0 && <p className="empty-state compact">{props.t("noPassportSlotHistory")}</p>}
+          </div>
+        </div>
+      ) : (
+        <p className="empty-state compact">{props.t("noPassportSlotMonitor")}</p>
+      )}
+    </section>
   );
 }
 

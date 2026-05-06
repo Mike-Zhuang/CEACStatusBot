@@ -99,6 +99,14 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
 
 如果 `queued` 或 `running` 长时间积压，先检查 Worker 服务和日志。
 
+GTS 护照预约监控任务会使用 `passport_slot_manual` 或 `passport_slot_automatic` 触发类型：
+
+```bash
+sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
+  ".headers on" ".mode column" \
+  "select c.display_name, m.is_enabled, m.last_slot_count, m.next_check_at, m.last_error_message from passport_slot_monitors m join ceac_cases c on c.id = m.case_id order by m.updated_at desc limit 20;"
+```
+
 ## 备份
 
 建议至少备份三类文件：
@@ -224,6 +232,26 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
 - 验证码识别失败。
 - 用户填写的地点、申请号、护照号或姓氏前 5 位不正确。
 - 代理或出口 IP 被第三方站点限制。
+
+### GTS 护照预约监控无结果
+
+检查对应任务和监控状态：
+
+```bash
+sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
+  ".headers on" ".mode column" \
+  "select id, case_id, trigger_type, success, error_message, duration_ms, finished_at from query_runs where trigger_type like 'passport_slot_%' order by id desc limit 20;"
+sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
+  ".headers on" ".mode column" \
+  "select case_id, is_enabled, last_slot_count, last_checked_at, next_check_at, last_error_message from passport_slot_monitors order by updated_at desc limit 20;"
+```
+
+常见原因：
+
+- UID/HAL 尚未被 GTS 后端识别，接口返回 `token:null` 或 `invalid_uid`。
+- 当前没有可预约 slot，系统只记录查询日志，不发送邮件。
+- GTS 接口限流，系统会自动把下一次查询退避到 30-60 分钟后。
+- Worker 无法访问 `https://scheduling-api.gtspremium.com`。
 
 ### 自动部署没有更新
 

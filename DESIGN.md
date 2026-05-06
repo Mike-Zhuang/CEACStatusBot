@@ -1,5 +1,9 @@
 ## Overview
 
+CEACStatusBot 的产品界面以签证档案为核心对象。每个档案同时承载 CEAC 状态查询和可选的 GTS 护照预约 slot 监控：CEAC 状态进入 Approved 或 Issued 后，详情页中的“护照预约监控”区域成为主要后续动作，用户填写 UID/HAL 后系统以 5-10 分钟随机间隔轮询 GTS slot。该区域必须保持操作型工具风格，优先展示启停状态、最近 slot 数、最近错误、下次查询时间和手动查询按钮，不做营销式说明卡。
+
+GTS 监控的视觉层级应低于 CEAC 当前状态，但高于历史时间线。Approved/Issued 状态下可以用成功色细边框提示“可以开始配置”，其他状态只显示克制的提前配置提示。slot 历史使用紧凑列表，不使用大面积装饰。
+
 Linear's marketing canvas is the deepest dark surface in this collection — `{colors.canvas}` is #010102, essentially pure black with a faint blue tint. On top sits a four-step surface ladder (`{colors.surface-1}` through `{colors.surface-4}`) for cards, panels, and lifted tiles, with hairline borders running from `{colors.hairline}` (#23252a) up through `{colors.hairline-strong}` and `{colors.hairline-tertiary}`. Light gray text (`{colors.ink}` #f7f8f8) carries the body and headlines.
 
 The single chromatic accent is **Linear lavender-blue** `{colors.primary}` (#5e6ad2) — used on the brand mark, focus rings, and the primary CTA button. A lighter hover state (`{colors.primary-hover}` #828fff) and a focus-tinted variant (`{colors.primary-focus}` #5e69d1) extend the same hue. Linear avoids saturated greens, oranges, reds, etc. on the marketing canvas — the only semantic color is `{colors.semantic-success}` (#27a644) for status pills and the rare success indicator.

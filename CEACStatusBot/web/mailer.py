@@ -143,8 +143,42 @@ def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None
                 "你可以登录站内档案详情页停止自动查询；如果一周内未停止，系统将自动停止该档案的自动查询并邮件通知你。",
             ],
         )
+    if str(result.get("status", "")).strip().lower() in {"approved", "issued"}:
+        lines.extend(
+            [
+                "",
+                "护照预约提醒：你现在可以登录 CEACStatusBot，在该档案详情页填写 UID 或 HAL，开启 GTS 护照预约 slot 监控。",
+                "系统会以 5-10 分钟随机间隔查询可预约时间，并只在发现新 slot 或 slot 时间变化时邮件通知你。",
+                f"登录入口：{getSettings().appBaseUrl}",
+            ],
+        )
     body = "\n".join(lines)
     sendCaseEmail(case, smtpConfig, subject, body)
+
+
+def sendPassportSlotNotification(
+    case: dict[str, Any],
+    smtpConfig: dict[str, Any] | None,
+    *,
+    identifierMasked: str,
+    fetchedAt: str,
+    slotLines: list[str],
+    rawSummary: str,
+) -> None:
+    subject = f"[GTS] 发现可预约时间：{case['display_name']}"
+    lines = [
+        f"档案：{case['display_name']}",
+        f"申请号：{case['application_num']}",
+        f"UID/HAL：{identifierMasked}",
+        f"查询时间：{fetchedAt}",
+        "",
+        "可预约时间：",
+    ]
+    lines.extend(slotLines or ["接口返回了可用 slot，但未能解析为标准日期字段，请查看下方原始摘要。"])
+    if rawSummary:
+        lines.extend(["", "原始返回摘要：", rawSummary])
+    lines.extend(["", "预约入口：https://schedule.gtspremium.com/"])
+    sendCaseEmail(case, smtpConfig, subject, "\n".join(lines))
 
 
 def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, issuedAt: str) -> None:

@@ -155,6 +155,35 @@ def initializeDatabase() -> None:
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS passport_slot_monitors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id INTEGER NOT NULL UNIQUE,
+                identifier_encrypted TEXT NOT NULL,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                next_check_at TEXT,
+                last_checked_at TEXT,
+                last_slot_fingerprint TEXT NOT NULL DEFAULT '',
+                last_slot_count INTEGER NOT NULL DEFAULT 0,
+                last_result_json TEXT NOT NULL DEFAULT '',
+                last_error_message TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS passport_slot_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                monitor_id INTEGER NOT NULL,
+                case_id INTEGER NOT NULL,
+                slot_fingerprint TEXT NOT NULL,
+                slot_count INTEGER NOT NULL DEFAULT 0,
+                raw_payload TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                notification_sent INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (monitor_id) REFERENCES passport_slot_monitors(id) ON DELETE CASCADE,
+                FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE CASCADE
+            );
             """
         )
         columns = {

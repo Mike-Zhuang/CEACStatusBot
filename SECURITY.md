@@ -5,10 +5,10 @@
 ## 安全模型
 
 - 本站登录密码使用 Argon2id 单向哈希。旧 PBKDF2-SHA256 哈希仅用于兼容迁移，用户登录成功后应自动升级为 Argon2id。
-- CEAC 档案敏感字段、用户自定义 SMTP 授权码、系统 SMTP 授权码和原始查询快照使用 AES-256-GCM 可逆加密。
+- CEAC 档案敏感字段、GTS UID/HAL、用户自定义 SMTP 授权码、系统 SMTP 授权码和原始查询快照使用 AES-256-GCM 可逆加密。
 - 可逆加密主密钥保存在仓库外本地密钥文件中，通过 `CREDENTIAL_KEY_FILE` 指定。
 - Web 进程不直接执行 CEAC 爬虫；Web 只创建 SQLite 队列任务，独立 Worker 消费任务。
-- CEAC 请求目标固定为 `https://ceac.state.gov`，用户输入不能影响请求 Host、协议或根 URL。
+- CEAC 请求目标固定为 `https://ceac.state.gov`，GTS 护照预约 slot 查询目标固定为 `https://scheduling-api.gtspremium.com`，用户输入不能影响请求 Host、协议或根 URL。
 - 敏感 API 请求校验 `Origin` / `Referer`，生产只信任 `https://ceac.mikezhuang.cn`。
 - 生产 Cookie 必须启用 `HttpOnly + SameSite=Lax + Secure`。
 - 生产入口只走 HTTPS 域名；8010 不作为公网入口。
@@ -81,6 +81,8 @@ CORS_ORIGINS=https://ceac.mikezhuang.cn
 ```
 
 所有修改类接口，包括登录、注册、重置密码、保存档案、保存 SMTP、快速查询、测试发信和管理员保存配置，都应通过 Origin / Referer 校验。
+
+GTS UID/HAL 监控配置和手动 slot 查询也属于敏感接口，必须继续走相同的会话、CSRF 和 HTTPS 约束。GTS 请求只允许发送规范化后的 UID/HAL 到固定 API 主机，不允许用户输入覆盖 URL、Header Host 或协议。
 
 ## Nginx 安全基线
 
