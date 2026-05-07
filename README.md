@@ -1,5 +1,7 @@
 # CEACStatusBot Web
 
+🎉 **Deployed Online:** The service is already deployed and available online. You can directly use it at [ceac.mikezhuang.cn](https://ceac.mikezhuang.cn).
+
 [中文文档](README.Chinese.md)
 
 > **Nonprofit personal project.** If CEACStatusBot helps you, voluntary support helps cover server and maintenance costs. Premium can be upgraded by sharing a Xiaohongshu post with the site link, screenshots, and your experience, then contacting the admin; or by leaving your account email in the donation note for manual review. Contact: `ceac-admin@mikezhuang.cn`.

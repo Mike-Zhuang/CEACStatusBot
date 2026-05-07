@@ -1,5 +1,7 @@
 # CEACStatusBot Web
 
+🎉 **已部署上线:** 本服务已部署上线，可以直接访问 [ceac.mikezhuang.cn](https://ceac.mikezhuang.cn) 使用。
+
 > **非盈利个人项目。** 如果 CEACStatusBot 对你有帮助，欢迎自愿赞赏支持服务器和维护成本。Premium 升级方式：在小红书发布包含网站链接、使用截图和使用感受的帖子后联系管理员；或赞赏时备注账号邮箱，管理员人工核对后升级。联系邮箱：`ceac-admin@mikezhuang.cn`。
 >
 > <img src="frontend/public/support/buy-me-a-coffee.jpg" alt="支持 CEACStatusBot" width="180" />
