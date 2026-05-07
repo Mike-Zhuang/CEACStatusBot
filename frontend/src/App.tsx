@@ -1985,7 +1985,7 @@ function AdminPanel(props: {
   const securityEventsByActor = useMemo(() => {
     const grouped = new Map<string, { label: string; events: SecurityEvent[] }>();
     for (const event of props.securityEvents) {
-      const key = event.email_hash || event.actor_summary || event.device_hash || props.t("triggerUnknown");
+      const key = event.user_email?.toLowerCase() || event.email_hash || event.actor_summary || event.device_hash || props.t("triggerUnknown");
       const current = grouped.get(key);
       const nextLabel = event.user_email || current?.label || event.actor_summary || event.email_hash.slice(0, 12) || props.t("triggerUnknown");
       grouped.set(key, { label: nextLabel, events: [...(current?.events ?? []), event] });
