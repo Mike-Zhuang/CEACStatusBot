@@ -26,7 +26,7 @@ This project is a modified version released under the GPLv3 license. It preserve
 - `Query now` creates manual jobs. The frontend polls job status and refreshes the profile and timeline after completion. Non-admin accounts have a daily manual query limit.
 - No email is sent when status is unchanged. Status changes or CEAC last-updated changes are written to history and trigger notifications.
 - Supports both a system default SMTP sender and per-user custom SMTP settings.
-- Admins can view all users, grouped profiles, status history, query logs, default sender configuration, and per-user Worker priority.
+- Admins can manage account tiers and Worker priority, and view profile summaries, system query logs, security events, and default sender configuration.
 - Query logs record manual/automatic sources, absolute timestamps, duration, success/failure, and error messages.
 - The frontend includes a custom SVG favicon/brand icon and an optional ICP record footer link.
 

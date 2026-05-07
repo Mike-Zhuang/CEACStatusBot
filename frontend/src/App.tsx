@@ -1985,7 +1985,7 @@ function AdminPanel(props: {
   const securityEventsByActor = useMemo(() => {
     const grouped = new Map<string, SecurityEvent[]>();
     for (const event of props.securityEvents) {
-      const actor = event.user_email || event.actor_summary || event.email_hash.slice(0, 12) || props.t("triggerUnknown");
+      const actor = event.actor_summary || event.user_email || event.email_hash.slice(0, 12) || props.t("triggerUnknown");
       grouped.set(actor, [...(grouped.get(actor) ?? []), event]);
     }
     return Array.from(grouped.entries()).sort(([actorA], [actorB]) => actorA.localeCompare(actorB));
@@ -1997,7 +1997,7 @@ function AdminPanel(props: {
     setCollapsedAdminUsers((current) => ({ ...current, [userId]: !(current[userId] ?? true) }));
   };
   const toggleSecurityActor = (actor: string) => {
-    setCollapsedSecurityActors((current) => ({ ...current, [actor]: !(current[actor] ?? false) }));
+    setCollapsedSecurityActors((current) => ({ ...current, [actor]: !(current[actor] ?? true) }));
   };
   return (
     <div className="stack">
@@ -2169,7 +2169,7 @@ function AdminPanel(props: {
         </div>
         <div className="log-groups">
           {queryRunsByUser.map(([email, runs]) => {
-            const isCollapsed = collapsedLogUsers[email] ?? false;
+            const isCollapsed = collapsedLogUsers[email] ?? true;
             return (
               <section key={email} className={`log-group ${isCollapsed ? "collapsed" : ""}`}>
                 <button type="button" className="log-group-header" onClick={() => toggleLogUser(email)}>
@@ -2261,7 +2261,7 @@ function AdminPanel(props: {
         </div>
         <div className="log-groups">
           {securityEventsByActor.map(([actor, events]) => {
-            const isCollapsed = collapsedSecurityActors[actor] ?? false;
+            const isCollapsed = collapsedSecurityActors[actor] ?? true;
             return (
               <section key={actor} className={`log-group ${isCollapsed ? "collapsed" : ""}`}>
                 <button type="button" className="log-group-header" onClick={() => toggleSecurityActor(actor)}>
@@ -2284,7 +2284,7 @@ function AdminPanel(props: {
                         <div className="log-card-grid">
                           <Metric label={props.t("securityEventType")} value={event.event_type} />
                           <Metric label={props.t("securityActor")} value={event.actor_summary || event.user_email || props.t("triggerUnknown")} />
-                          <Metric label={props.t("profile")} value={event.user_email || props.t("triggerUnknown")} />
+                          <Metric label={props.t("email")} value={event.user_email || props.t("triggerUnknown")} />
                           <Metric label={props.t("securitySeverity")} value={event.severity} />
                           <Metric label="Path" value={event.path || "-"} />
                           <Metric label={props.t("changeContent")} value={event.detail || "-"} />
