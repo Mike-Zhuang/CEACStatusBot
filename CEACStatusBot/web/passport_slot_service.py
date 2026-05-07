@@ -521,6 +521,7 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
                         "sender_mode": row["sender_mode"],
                     },
                     smtpConfig,
+                    identifierFull=identifier,
                     identifierMasked=maskIdentifier(identifier),
                     fetchedAt=finishedIso,
                     slotStatus=slotStatus,
@@ -634,6 +635,7 @@ def sendCurrentPassportSlotEmail(caseId: int, userId: int | None = None) -> dict
         sendPassportSlotStatusEmail(
             case,
             smtpConfig,
+            identifierFull=identifier,
             identifierMasked=maskIdentifier(identifier),
             fetchedAt=row["last_checked_at"] or utcNowIso(),
             slotStatus=slotStatus,

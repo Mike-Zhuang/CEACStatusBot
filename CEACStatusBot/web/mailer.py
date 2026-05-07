@@ -160,6 +160,7 @@ def sendPassportSlotNotification(
     case: dict[str, Any],
     smtpConfig: dict[str, Any] | None,
     *,
+    identifierFull: str,
     identifierMasked: str,
     fetchedAt: str,
     slotStatus: str,
@@ -170,6 +171,7 @@ def sendPassportSlotNotification(
     sendPassportSlotStatusEmail(
         case,
         smtpConfig,
+        identifierFull=identifierFull,
         identifierMasked=identifierMasked,
         fetchedAt=fetchedAt,
         slotStatus=slotStatus,
@@ -185,6 +187,7 @@ def sendPassportSlotStatusEmail(
     case: dict[str, Any],
     smtpConfig: dict[str, Any] | None,
     *,
+    identifierFull: str,
     identifierMasked: str,
     fetchedAt: str,
     slotStatus: str,
@@ -205,7 +208,7 @@ def sendPassportSlotStatusEmail(
     lines = [
         f"档案：{case['display_name']}",
         f"申请号：{case['application_num']}",
-        f"UID/HAL：{identifierMasked}",
+        f"UID/HAL：{identifierFull or identifierMasked}",
         f"查询时间：{fetchedAt}",
         "",
         f"当前状态：{statusLabel}",
@@ -222,7 +225,14 @@ def sendPassportSlotStatusEmail(
         lines.append("这是一封测试邮件，用于确认护照预约监控的发信配置可用。")
     if rawSummary:
         lines.extend(["", "原始返回摘要：", rawSummary])
-    lines.extend(["", "预约入口：https://schedule.gtspremium.com/"])
+    lines.extend(
+        [
+            "",
+            "预约入口：https://schedule.gtspremium.com/",
+            "操作提示：打开官网，输入上方 UID/HAL，勾选条款后查询。",
+            "安全提醒：本邮件包含完整 UID/HAL，请勿转发或公开截图。",
+        ],
+    )
     sendCaseEmail(case, smtpConfig, subject, "\n".join(lines))
 
 

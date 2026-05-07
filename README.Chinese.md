@@ -98,7 +98,7 @@ npm run dev
 
 如果某个档案关闭了“状态更新邮件推送”，系统仍会定时查询并记录时间线，但不会在状态变化时自动发邮件。用户仍可手动点击“测试发信”，按最新已有状态模板发送一封邮件。
 
-护照预约 slot 监控使用 GTS 官网同源 API：先用 UID/HAL 调用 `https://scheduling-api.gtspremium.com/authenticate` 获取 token，再调用 `/availability7days/` 查询 7 天可用时间。UID/HAL、GTS 原始返回和 slot 变化历史都会加密保存。系统会把 GTS 返回归一化为三种状态：`not_eligible` 表示暂不具备预约资格，`no_slot` 表示已可预约但暂无可选时间，`has_slot` 表示发现一个或多个可预约时间。自动轮询由“启用自动监控”控制，slot 变化邮件由“状态更新时发送邮件推送”控制。系统会在 `not_eligible -> no_slot`、`no_slot -> has_slot`、以及 `has_slot` 时间列表变化时发邮件。处于 `no_slot` 后按中国时间零点加频：23:59-00:02 约 15 秒一次，23:59:45-00:00:30 核心窗口约 5 秒一次，并明确覆盖 00:00:00 和 00:00:02。发现 slot 后后续查询先放缓到约 30 秒，再到约 1 分钟，若仍无变化则恢复 5-10 分钟常规频率。GTS 查询任务同样由 Worker 消费，触发类型显示为 `passport_slot_manual` 或 `passport_slot_automatic`。
+护照预约 slot 监控使用 GTS 官网同源 API：先用 UID/HAL 调用 `https://scheduling-api.gtspremium.com/authenticate` 获取 token，再调用 `/availability7days/` 查询 7 天可用时间。UID/HAL、GTS 原始返回和 slot 变化历史都会加密保存。系统会把 GTS 返回归一化为三种状态：`not_eligible` 表示暂不具备预约资格，`no_slot` 表示已可预约但暂无可选时间，`has_slot` 表示发现一个或多个可预约时间。自动轮询由“启用自动监控”控制，slot 变化邮件由“状态更新时发送邮件推送”控制。系统会在 `not_eligible -> no_slot`、`no_slot -> has_slot`、以及 `has_slot` 时间列表变化时发邮件。`no_slot` 和 `has_slot` 邮件会包含完整 UID/HAL、GTS 官网入口、操作提示和不要转发邮件的安全提醒；系统不使用猜测的 UID/HAL 深链，因为 GTS 官网没有公开可靠的自动填充 URL。处于 `no_slot` 后按中国时间零点加频：23:59-00:02 约 15 秒一次，23:59:45-00:00:30 核心窗口约 5 秒一次，并明确覆盖 00:00:00 和 00:00:02。发现 slot 后后续查询先放缓到约 30 秒，再到约 1 分钟，若仍无变化则恢复 5-10 分钟常规频率。GTS 查询任务同样由 Worker 消费，触发类型显示为 `passport_slot_manual` 或 `passport_slot_automatic`。
 
 ## 生产安全基线
 
