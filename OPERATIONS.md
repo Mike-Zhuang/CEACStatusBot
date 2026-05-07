@@ -115,6 +115,14 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
   "select u.email, count(*) as sent_emails from email_delivery_logs e join users u on u.id = e.user_id where e.created_at >= datetime('now', 'start of day') group by u.id order by sent_emails desc;"
 ```
 
+查看最近安全事件：
+
+```bash
+sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
+  ".headers on" ".mode column" \
+  "select id, event_type, severity, user_id, actor_summary, path, created_at from security_events order by id desc limit 50;"
+```
+
 GTS 护照预约监控任务会使用 `passport_slot_manual` 或 `passport_slot_automatic` 触发类型：
 
 ```bash

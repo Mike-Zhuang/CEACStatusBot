@@ -5,7 +5,9 @@ from urllib.parse import urlparse
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from .case_service import (
     createCase,
@@ -61,6 +63,18 @@ from .security import (
     setSessionCookie,
     verifyPassword,
 )
+from .security_guard import (
+    attachDeviceCookie,
+    clearLoginFailures,
+    enforceAuthCodeLimits,
+    enforceLoginAttemptLimit,
+    enforceRateLimit,
+    getOrCreateDeviceId,
+    listSecurityEvents,
+    logSecurityEvent,
+    recordLoginFailure,
+    requestActorHashes,
+)
 from .secrets import decryptIfNeeded, getCredentialMasterKey
 
 
@@ -68,6 +82,7 @@ app = FastAPI(title="CEACStatusBot Web", version="1.0.0")
 settings = getSettings()
 scheduler = BackgroundScheduler(timezone="UTC")
 
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowedHosts)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.corsOrigins,
@@ -75,6 +90,47 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validationExceptionHandler(request: Request, exc: RequestValidationError):
+    logSecurityEvent(
+        eventType="validation_rejected",
+        request=request,
+        severity="warning",
+        detail={"errorCount": len(exc.errors())},
+    )
+    return JSONResponse({"detail": "请求参数格式不正确"}, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+
+@app.middleware("http")
+async def securityResponseHeaders(request: Request, callNext):
+    response = await callNext(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    )
+    if settings.cookieSecure:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+@app.middleware("http")
+async def requestGuard(request: Request, callNext):
+    if request.url.path.startswith("/api/"):
+        getOrCreateDeviceId(request)
+        contentLength = request.headers.get("content-length")
+        if contentLength and contentLength.isdigit() and int(contentLength) > settings.apiMaxBodyBytes:
+            logSecurityEvent(eventType="request_body_too_large", request=request, severity="warning")
+            return JSONResponse({"detail": "请求体过大"}, status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+    response = await callNext(request)
+    if request.url.path.startswith("/api/"):
+        attachDeviceCookie(request, response)
+    return response
 
 
 def requestOrigin(request: Request) -> str:
@@ -96,6 +152,12 @@ async def csrfOriginGuard(request: Request, callNext):
     if request.method in unsafeMethods and request.url.path.startswith("/api/"):
         origin = requestOrigin(request)
         if origin not in settings.csrfTrustedOrigins:
+            logSecurityEvent(
+                eventType="csrf_rejected",
+                request=request,
+                severity="warning",
+                detail={"origin": origin or "missing"},
+            )
             return JSONResponse({"detail": "Forbidden origin"}, status_code=status.HTTP_403_FORBIDDEN)
     return await callNext(request)
 
@@ -192,11 +254,13 @@ def health() -> dict:
 
 
 @app.post("/api/auth/send-code")
-def sendCode(payload: SendCodeRequest) -> dict:
+def sendCode(payload: SendCodeRequest, request: Request) -> dict:
+    email = str(payload.email).lower()
+    enforceAuthCodeLimits(request, email, "register")
     code = f"{secrets.randbelow(1_000_000):06d}"
     now = datetime.now(UTC)
     with getConnection() as connection:
-        existing = connection.execute("SELECT id FROM users WHERE email = ?", (payload.email,)).fetchone()
+        existing = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该邮箱已注册")
         connection.execute(
@@ -205,22 +269,25 @@ def sendCode(payload: SendCodeRequest) -> dict:
             VALUES (?, ?, 'register', ?, ?)
             """,
             (
-                payload.email,
+                email,
                 hashCode(code),
                 (now + timedelta(minutes=10)).replace(microsecond=0).isoformat(),
                 now.replace(microsecond=0).isoformat(),
             ),
         )
-    sendSystemEmail(payload.email, "CEACStatusBot 注册验证码", f"你的注册验证码是：{code}\n\n验证码 10 分钟内有效。")
+    sendSystemEmail(email, "CEACStatusBot 注册验证码", f"你的注册验证码是：{code}\n\n验证码 10 分钟内有效。")
+    logSecurityEvent(eventType="register_code_sent", request=request, email=email)
     return {"ok": True}
 
 
 @app.post("/api/auth/send-password-reset-code")
-def sendPasswordResetCode(payload: PasswordResetCodeRequest) -> dict:
+def sendPasswordResetCode(payload: PasswordResetCodeRequest, request: Request) -> dict:
+    email = str(payload.email).lower()
+    enforceAuthCodeLimits(request, email, "password_reset")
     code = f"{secrets.randbelow(1_000_000):06d}"
     now = datetime.now(UTC)
     with getConnection() as connection:
-        existing = connection.execute("SELECT id FROM users WHERE email = ?", (payload.email,)).fetchone()
+        existing = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
         if not existing:
             return {"ok": True}
         connection.execute(
@@ -229,21 +296,32 @@ def sendPasswordResetCode(payload: PasswordResetCodeRequest) -> dict:
             VALUES (?, ?, 'password_reset', ?, ?)
             """,
             (
-                payload.email,
+                email,
                 hashCode(code),
                 (now + timedelta(minutes=10)).replace(microsecond=0).isoformat(),
                 now.replace(microsecond=0).isoformat(),
             ),
         )
-    sendSystemEmail(payload.email, "CEACStatusBot 重置密码验证码", f"你的重置密码验证码是：{code}\n\n验证码 10 分钟内有效。")
+    sendSystemEmail(email, "CEACStatusBot 重置密码验证码", f"你的重置密码验证码是：{code}\n\n验证码 10 分钟内有效。")
+    logSecurityEvent(eventType="password_reset_code_sent", request=request, email=email)
     return {"ok": True}
 
 
 @app.post("/api/auth/reset-password")
-def resetPassword(payload: PasswordResetRequest) -> dict:
+def resetPassword(payload: PasswordResetRequest, request: Request) -> dict:
+    email = str(payload.email).lower()
+    hashes = requestActorHashes(request, email)
+    enforceRateLimit(
+        request=request,
+        scope="password_reset_submit_ip_device",
+        subject=f"{hashes['ip_hash']}:{hashes['device_hash']}",
+        limit=10,
+        windowSeconds=900,
+        eventType="password_reset_rate_limited",
+    )
     nowIso = utcNowIso()
     with getConnection() as connection:
-        user = connection.execute("SELECT id FROM users WHERE email = ?", (payload.email,)).fetchone()
+        user = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
         if not user:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码错误或已过期")
         codeRow = connection.execute(
@@ -254,7 +332,7 @@ def resetPassword(payload: PasswordResetRequest) -> dict:
             ORDER BY id DESC
             LIMIT 1
             """,
-            (payload.email,),
+            (email,),
         ).fetchone()
         if not codeRow or codeRow["code_hash"] != hashCode(payload.code):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码错误或已过期")
@@ -265,14 +343,29 @@ def resetPassword(payload: PasswordResetRequest) -> dict:
             (hashPassword(payload.password), nowIso, user["id"]),
         )
         connection.execute("UPDATE email_verification_codes SET used_at = ? WHERE id = ?", (nowIso, codeRow["id"]))
+        connection.execute(
+            "UPDATE user_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            (nowIso, user["id"]),
+        )
+    logSecurityEvent(eventType="password_reset_completed", request=request, userId=int(user["id"]), email=email)
     return {"ok": True}
 
 
 @app.post("/api/auth/register")
-def register(payload: RegisterRequest, response: Response) -> dict:
+def register(payload: RegisterRequest, request: Request, response: Response) -> dict:
+    email = str(payload.email).lower()
+    hashes = requestActorHashes(request, email)
+    enforceRateLimit(
+        request=request,
+        scope="register_submit_ip_device",
+        subject=f"{hashes['ip_hash']}:{hashes['device_hash']}",
+        limit=10,
+        windowSeconds=900,
+        eventType="register_rate_limited",
+    )
     nowIso = utcNowIso()
     with getConnection() as connection:
-        existing = connection.execute("SELECT id FROM users WHERE email = ?", (payload.email,)).fetchone()
+        existing = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该邮箱已注册")
         codeRow = connection.execute(
@@ -283,7 +376,7 @@ def register(payload: RegisterRequest, response: Response) -> dict:
             ORDER BY id DESC
             LIMIT 1
             """,
-            (payload.email,),
+            (email,),
         ).fetchone()
         if not codeRow or codeRow["code_hash"] != hashCode(payload.code):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码错误")
@@ -294,23 +387,28 @@ def register(payload: RegisterRequest, response: Response) -> dict:
             INSERT INTO users (email, password_hash, role, account_tier, is_email_verified, created_at, updated_at)
             VALUES (?, ?, 'user', 'standard', 1, ?, ?)
             """,
-            (payload.email, hashPassword(payload.password), nowIso, nowIso),
+            (email, hashPassword(payload.password), nowIso, nowIso),
         )
         connection.execute("UPDATE email_verification_codes SET used_at = ? WHERE id = ?", (nowIso, codeRow["id"]))
         user = connection.execute(
             "SELECT id, email, role, account_tier, is_email_verified, created_at FROM users WHERE id = ?",
             (cursor.lastrowid,),
         ).fetchone()
-    setSessionCookie(response, user)
+    setSessionCookie(response, user, request)
+    logSecurityEvent(eventType="register_completed", request=request, userId=int(user["id"]), email=email)
     return {"user": user}
 
 
 @app.post("/api/auth/login")
-def login(payload: LoginRequest, response: Response) -> dict:
+def login(payload: LoginRequest, request: Request, response: Response) -> dict:
+    email = str(payload.email).lower()
+    enforceLoginAttemptLimit(request, email)
     with getConnection() as connection:
-        user = connection.execute("SELECT * FROM users WHERE email = ?", (payload.email,)).fetchone()
+        user = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     if not user or not verifyPassword(payload.password, user["password_hash"]):
+        recordLoginFailure(request, email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误")
+    clearLoginFailures(email)
     if needsPasswordRehash(user["password_hash"]):
         with getConnection() as connection:
             connection.execute(
@@ -325,13 +423,20 @@ def login(payload: LoginRequest, response: Response) -> dict:
         "is_email_verified": user["is_email_verified"],
         "created_at": user["created_at"],
     }
-    setSessionCookie(response, publicUser)
+    setSessionCookie(response, publicUser, request)
+    logSecurityEvent(eventType="login_success", request=request, userId=int(user["id"]), email=email)
     return {"user": publicUser}
 
 
 @app.post("/api/auth/logout")
-def logout(response: Response) -> dict:
-    clearSessionCookie(response)
+def logout(request: Request, response: Response) -> dict:
+    userId = None
+    try:
+        userId = int(getCurrentUser(request)["id"])
+    except HTTPException:
+        userId = None
+    clearSessionCookie(response, request)
+    logSecurityEvent(eventType="logout", request=request, userId=userId)
     return {"ok": True}
 
 
@@ -341,13 +446,13 @@ def me(user: dict = Depends(currentUserDependency)) -> dict:
 
 
 @app.patch("/api/me")
-def updateMe(payload: ProfileUpdateRequest, response: Response, user: dict = Depends(currentUserDependency)) -> dict:
+def updateMe(payload: ProfileUpdateRequest, request: Request, response: Response, user: dict = Depends(currentUserDependency)) -> dict:
     nowIso = utcNowIso()
     with getConnection() as connection:
         privateUser = connection.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
         if not privateUser or not verifyPassword(payload.currentPassword, privateUser["password_hash"]):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码错误")
-        nextEmail = payload.email.strip() if payload.email else privateUser["email"]
+        nextEmail = str(payload.email).lower() if payload.email else privateUser["email"]
         if nextEmail != privateUser["email"]:
             exists = connection.execute("SELECT id FROM users WHERE email = ? AND id != ?", (nextEmail, user["id"])).fetchone()
             if exists:
@@ -369,7 +474,15 @@ def updateMe(payload: ProfileUpdateRequest, response: Response, user: dict = Dep
             "SELECT id, email, role, account_tier, is_email_verified, created_at FROM users WHERE id = ?",
             (user["id"],),
         ).fetchone()
-    setSessionCookie(response, publicUser)
+    clearSessionCookie(response, request)
+    setSessionCookie(response, publicUser, request)
+    logSecurityEvent(
+        eventType="profile_updated",
+        request=request,
+        userId=int(user["id"]),
+        email=nextEmail,
+        detail={"emailChanged": nextEmail != privateUser["email"], "passwordChanged": bool(payload.newPassword)},
+    )
     return {"user": publicUser}
 
 
@@ -521,18 +634,30 @@ def adminUsers(_: dict = Depends(adminDependency)) -> dict:
 
 
 @app.patch("/api/admin/users/{userId}/worker-priority")
-def adminPatchUserWorkerPriority(userId: int, payload: WorkerPriorityPatch, _: dict = Depends(adminDependency)) -> dict:
+def adminPatchUserWorkerPriority(userId: int, payload: WorkerPriorityPatch, request: Request, admin: dict = Depends(adminDependency)) -> dict:
     user = updateUserWorkerPriority(userId, payload.workerPriority)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    logSecurityEvent(
+        eventType="admin_worker_priority_updated",
+        request=request,
+        userId=int(admin["id"]),
+        detail={"targetUserId": userId, "workerPriority": payload.workerPriority},
+    )
     return {"user": user}
 
 
 @app.patch("/api/admin/users/{userId}/account-tier")
-def adminPatchUserAccountTier(userId: int, payload: AccountTierPatch, _: dict = Depends(adminDependency)) -> dict:
+def adminPatchUserAccountTier(userId: int, payload: AccountTierPatch, request: Request, admin: dict = Depends(adminDependency)) -> dict:
     user = updateUserAccountTier(userId, payload.accountTier)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    logSecurityEvent(
+        eventType="admin_account_tier_updated",
+        request=request,
+        userId=int(admin["id"]),
+        detail={"targetUserId": userId, "accountTier": payload.accountTier},
+    )
     return {"user": user}
 
 
@@ -571,6 +696,11 @@ def adminQueryRuns(_: dict = Depends(adminDependency)) -> dict:
     return {"runs": listCasesForQueryRuns(rows)}
 
 
+@app.get("/api/admin/security-events")
+def adminSecurityEvents(limit: int = 200, _: dict = Depends(adminDependency)) -> dict:
+    return {"events": listSecurityEvents(limit)}
+
+
 @app.get("/api/admin/system-email")
 def adminSystemEmail(_: dict = Depends(adminDependency)) -> dict:
     return {"config": getSystemSmtpConfigPublic()}
@@ -580,7 +710,7 @@ def adminSystemEmail(_: dict = Depends(adminDependency)) -> dict:
 def adminSaveSystemEmail(payload: SystemSmtpConfigInput, _: dict = Depends(adminDependency)) -> dict:
     try:
         config = saveSystemSmtpConfig(
-            fromEmail=payload.fromEmail,
+            fromEmail=str(payload.fromEmail),
             host=payload.host,
             port=payload.port,
             useSsl=payload.useSsl,

@@ -72,7 +72,19 @@ npm run dev
 | `SYSTEM_SMTP_USE_SSL` | `true` | 是否使用 SMTP SSL |
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许访问后端的前端地址 |
 | `CSRF_TRUSTED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 敏感请求允许的 Origin / Referer 来源 |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1,ceac.mikezhuang.cn` | 应用层允许的 Host header |
+| `TRUSTED_PROXY_IPS` | `127.0.0.1,::1` | 允许信任 `X-Forwarded-For` 的反向代理 IP |
+| `API_MAX_BODY_BYTES` | `131072` | API 请求体最大字节数 |
 | `COOKIE_SECURE` | `false` | 本地默认 `false`，HTTPS 生产必须 `true` |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | `720` | 会话空闲自动登出时间 |
+| `SESSION_ABSOLUTE_TIMEOUT_DAYS` | `14` | 数据库会话最长有效期 |
+| `AUTH_LOGIN_IP_DEVICE_LIMIT_PER_MINUTE` | `10` | 每个 IP/设备每分钟登录尝试上限 |
+| `AUTH_LOGIN_EMAIL_FAILURE_LIMIT_PER_15_MINUTES` | `5` | 邮箱登录失败冷却阈值 |
+| `AUTH_CODE_EMAIL_LIMIT_PER_HOUR` | `3` | 每个邮箱每小时验证码请求上限 |
+| `AUTH_CODE_IP_DEVICE_LIMIT_PER_10_MINUTES` | `3` | 每个 IP/设备每 10 分钟验证码请求上限 |
+| `STANDARD_API_LIMIT_PER_MINUTE` | `120` | 普通账号每分钟已登录 API 上限 |
+| `PREMIUM_API_LIMIT_PER_MINUTE` | `300` | Premium 账号每分钟已登录 API 上限 |
+| `ADMIN_API_LIMIT_PER_MINUTE` | `600` | 管理员每分钟已登录 API 上限 |
 | `WORKER_POLL_INTERVAL_SECONDS` | `1` | Worker 轮询 SQLite 队列间隔；GTS 零点加频任务需要秒级拾取 |
 | `STANDARD_DAILY_MANUAL_QUERY_LIMIT` | `1` | 普通账号每天可发起的 CEAC/GTS 手动查询次数 |
 | `PREMIUM_DAILY_MANUAL_QUERY_LIMIT` | `1000` | Premium 账号每天可发起的 CEAC/GTS 手动查询次数 |
@@ -116,6 +128,8 @@ npm run dev
 - 主密钥放在仓库外本地密钥文件，不写入代码、README、`backend.env` 或 GitHub。
 - 生产 Cookie 必须启用 `HttpOnly + SameSite=Lax + Secure`。
 - 所有敏感 API 请求校验 `Origin` / `Referer`，生产只信任 `https://ceac.mikezhuang.cn`。
+- 应用层新增匿名设备 Cookie、SQLite 持久化 IP/设备/账号/邮箱限流、登录失败冷却、数据库会话空闲超时、请求体大小限制、Host 白名单和安全事件审计日志。
+- “记住密码”会把密码保存在当前浏览器本地，只建议在私人设备上使用。
 - CEAC 爬虫目标固定为 `https://ceac.state.gov`，GTS slot 查询目标固定为 `https://scheduling-api.gtspremium.com`，用户输入不能影响请求 Host 或 URL。
 - 生产入口只走 HTTPS 域名；8010 不作为公网入口。
 - Nginx 配置连接超时、请求限流、安全响应头，并只启用 TLS 1.2 / TLS 1.3。

@@ -1,93 +1,196 @@
-from pydantic import BaseModel, Field
+import ipaddress
+import re
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
-class SendCodeRequest(BaseModel):
-    email: str = Field(min_length=3)
+TEXT_PATTERN = re.compile(r"^[\w\s.\-:/#()@+|]+$", re.UNICODE)
+IDENTIFIER_PATTERN = re.compile(r"^(HAL[A-Z0-9]{6,24}|[A-Z0-9]{6,20})$")
+APPLICATION_PATTERN = re.compile(r"^[A-Z0-9\-_ ]{3,40}$")
+PASSPORT_PATTERN = re.compile(r"^(NA|[A-Z0-9]{3,32})$")
+SURNAME_PATTERN = re.compile(r"^[A-Z]{1,5}$")
+HOST_PATTERN = re.compile(r"^(?=.{1,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$")
 
 
-class PasswordResetCodeRequest(BaseModel):
-    email: str = Field(min_length=3)
+class SecureModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
-class PasswordResetRequest(BaseModel):
-    email: str = Field(min_length=3)
+def rejectUnsafeText(value: str, fieldName: str) -> str:
+    normalized = value.strip()
+    if not TEXT_PATTERN.match(normalized):
+        raise ValueError(f"{fieldName} 包含不支持的字符")
+    return normalized
+
+
+def validateSmtpHost(value: str) -> str:
+    host = value.strip().lower().rstrip(".")
+    if host in {"localhost", "localhost.localdomain"}:
+        raise ValueError("SMTP 主机不允许使用本机地址")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None:
+        raise ValueError("SMTP 主机必须使用公网域名，不能使用 IP 地址")
+    if not HOST_PATTERN.match(host):
+        raise ValueError("SMTP 主机必须是合法公网域名")
+    return host
+
+
+class SendCodeRequest(SecureModel):
+    email: EmailStr
+
+
+class PasswordResetCodeRequest(SecureModel):
+    email: EmailStr
+
+
+class PasswordResetRequest(SecureModel):
+    email: EmailStr
     code: str = Field(min_length=4, max_length=12)
     password: str = Field(min_length=8)
 
 
-class RegisterRequest(BaseModel):
-    email: str = Field(min_length=3)
+class RegisterRequest(SecureModel):
+    email: EmailStr
     password: str = Field(min_length=8)
     code: str = Field(min_length=4, max_length=12)
 
 
-class LoginRequest(BaseModel):
-    email: str = Field(min_length=3)
+class LoginRequest(SecureModel):
+    email: EmailStr
     password: str
 
 
-class ProfileUpdateRequest(BaseModel):
-    email: str | None = Field(default=None, min_length=3)
+class ProfileUpdateRequest(SecureModel):
+    email: EmailStr | None = None
     currentPassword: str = Field(min_length=1)
     newPassword: str | None = Field(default=None, min_length=8)
 
 
-class SmtpConfigInput(BaseModel):
-    fromEmail: str = Field(min_length=3)
+class SmtpConfigInput(SecureModel):
+    fromEmail: EmailStr
     host: str = Field(min_length=1)
     port: int = Field(ge=1, le=65535)
     useSsl: bool = True
     password: str = Field(min_length=1)
 
+    @field_validator("host")
+    @classmethod
+    def validateHost(cls, value: str) -> str:
+        return validateSmtpHost(value)
 
-class SystemSmtpConfigInput(BaseModel):
-    fromEmail: str = Field(min_length=3)
+    @field_validator("port")
+    @classmethod
+    def validatePort(cls, value: int) -> int:
+        if value not in {25, 465, 587, 2525}:
+            raise ValueError("SMTP 端口不在允许范围内")
+        return value
+
+
+class SystemSmtpConfigInput(SecureModel):
+    fromEmail: EmailStr
     host: str = Field(min_length=1)
     port: int = Field(ge=1, le=65535)
     useSsl: bool = True
     password: str | None = None
 
+    @field_validator("host")
+    @classmethod
+    def validateHost(cls, value: str) -> str:
+        return validateSmtpHost(value)
 
-class CeacCaseInput(BaseModel):
+    @field_validator("port")
+    @classmethod
+    def validatePort(cls, value: int) -> int:
+        if value not in {25, 465, 587, 2525}:
+            raise ValueError("SMTP 端口不在允许范围内")
+        return value
+
+
+class CeacCaseInput(SecureModel):
     displayName: str = Field(min_length=1, max_length=80)
-    location: str = Field(min_length=1)
+    location: str = Field(min_length=1, max_length=120)
     applicationNum: str = Field(min_length=1)
     passportNumber: str = Field(min_length=1)
     surname: str = Field(min_length=1, max_length=5)
-    receiveEmail: str = Field(min_length=3)
+    receiveEmail: EmailStr
     senderMode: str = Field(pattern="^(system|custom)$")
     isEnabled: bool = True
     emailNotificationsEnabled: bool = True
     smtpConfig: SmtpConfigInput | None = None
 
+    @field_validator("displayName")
+    @classmethod
+    def validateDisplayName(cls, value: str) -> str:
+        return rejectUnsafeText(value, "档案名称")
 
-class CeacCasePatch(BaseModel):
+    @field_validator("location")
+    @classmethod
+    def validateLocation(cls, value: str) -> str:
+        return rejectUnsafeText(value, "办理地点")
+
+    @field_validator("applicationNum")
+    @classmethod
+    def validateApplicationNum(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not APPLICATION_PATTERN.match(normalized):
+            raise ValueError("Application ID 或 Case Number 格式不支持")
+        return normalized
+
+    @field_validator("passportNumber")
+    @classmethod
+    def validatePassportNumber(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not PASSPORT_PATTERN.match(normalized):
+            raise ValueError("护照号码格式不支持")
+        return normalized
+
+    @field_validator("surname")
+    @classmethod
+    def validateSurname(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not SURNAME_PATTERN.match(normalized):
+            raise ValueError("姓氏只支持 1-5 个英文字母")
+        return normalized
+
+
+class CeacCasePatch(CeacCaseInput):
     displayName: str | None = Field(default=None, min_length=1, max_length=80)
-    location: str | None = None
+    location: str | None = Field(default=None, max_length=120)
     applicationNum: str | None = None
     passportNumber: str | None = None
     surname: str | None = Field(default=None, min_length=1, max_length=5)
-    receiveEmail: str | None = Field(default=None, min_length=3)
+    receiveEmail: EmailStr | None = None
     senderMode: str | None = Field(default=None, pattern="^(system|custom)$")
     isEnabled: bool | None = None
     emailNotificationsEnabled: bool | None = None
     smtpConfig: SmtpConfigInput | None = None
 
 
-class PassportSlotMonitorInput(BaseModel):
+class PassportSlotMonitorInput(SecureModel):
     identifier: str = Field(min_length=1, max_length=32)
     isEnabled: bool = True
     emailNotificationsEnabled: bool = True
 
+    @field_validator("identifier")
+    @classmethod
+    def validateIdentifier(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not IDENTIFIER_PATTERN.match(normalized):
+            raise ValueError("UID/HAL 格式不支持")
+        return normalized
 
-class PassportSlotMonitorPatch(BaseModel):
+
+class PassportSlotMonitorPatch(SecureModel):
     isEnabled: bool | None = None
     emailNotificationsEnabled: bool | None = None
 
 
-class WorkerPriorityPatch(BaseModel):
+class WorkerPriorityPatch(SecureModel):
     workerPriority: int = Field(ge=1, le=999)
 
 
-class AccountTierPatch(BaseModel):
+class AccountTierPatch(SecureModel):
     accountTier: str = Field(pattern="^(standard|premium)$")

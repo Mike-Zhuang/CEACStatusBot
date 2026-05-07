@@ -50,6 +50,47 @@ def initializeDatabase() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                device_hash TEXT NOT NULL DEFAULT '',
+                ip_hash TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                revoked_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS rate_limit_counters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope TEXT NOT NULL,
+                subject_hash TEXT NOT NULL,
+                window_start TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                locked_until TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE(scope, subject_hash, window_start)
+            );
+
+            CREATE TABLE IF NOT EXISTS security_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'info',
+                user_id INTEGER,
+                email_hash TEXT NOT NULL DEFAULT '',
+                ip_hash TEXT NOT NULL DEFAULT '',
+                device_hash TEXT NOT NULL DEFAULT '',
+                actor_summary TEXT NOT NULL DEFAULT '',
+                path TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
             CREATE TABLE IF NOT EXISTS email_verification_codes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT NOT NULL,
@@ -203,6 +244,15 @@ def initializeDatabase() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_email_delivery_logs_user_created
             ON email_delivery_logs(user_id, created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_user_sessions_token
+            ON user_sessions(token_hash);
+
+            CREATE INDEX IF NOT EXISTS idx_security_events_created
+            ON security_events(created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_rate_limit_counters_expires
+            ON rate_limit_counters(expires_at);
             """
         )
         columns = {

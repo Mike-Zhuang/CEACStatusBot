@@ -11,6 +11,10 @@
 - CEAC 请求目标固定为 `https://ceac.state.gov`，GTS 护照预约 slot 查询目标固定为 `https://scheduling-api.gtspremium.com`，用户输入不能影响请求 Host、协议或根 URL。
 - 敏感 API 请求校验 `Origin` / `Referer`，生产只信任 `https://ceac.mikezhuang.cn`。
 - 生产 Cookie 必须启用 `HttpOnly + SameSite=Lax + Secure`。
+- 应用层会下发匿名设备 Cookie，并使用 SQLite 持久化 IP/设备/账号/邮箱限流、登录失败冷却、验证码请求限流和安全事件审计。
+- 登录会话保存于数据库，Cookie 只保存随机 session token；服务端支持撤销、空闲超时和最长有效期。
+- 所有 API 请求体有大小限制；应用层同时设置安全响应头并限制 Host header。
+- “记住密码”属于便利性取舍：密码会保存在当前浏览器本地，只建议在私人设备使用。
 - 生产入口只走 HTTPS 域名；8010 不作为公网入口。
 
 ## 非目标与取舍
@@ -78,11 +82,26 @@ CREDENTIAL_KEY_FILE=/opt/ceacstatusbot-runtime/secrets/credential-master.key
 COOKIE_SECURE=true
 CSRF_TRUSTED_ORIGINS=https://ceac.mikezhuang.cn
 CORS_ORIGINS=https://ceac.mikezhuang.cn
+ALLOWED_HOSTS=ceac.mikezhuang.cn,localhost,127.0.0.1
+TRUSTED_PROXY_IPS=127.0.0.1,::1
+SESSION_IDLE_TIMEOUT_MINUTES=720
+SESSION_ABSOLUTE_TIMEOUT_DAYS=14
 ```
 
 所有修改类接口，包括登录、注册、重置密码、保存档案、保存 SMTP、快速查询、测试发信和管理员保存配置，都应通过 Origin / Referer 校验。
 
 GTS UID/HAL 监控配置和手动 slot 查询也属于敏感接口，必须继续走相同的会话、CSRF 和 HTTPS 约束。GTS 请求只允许发送规范化后的 UID/HAL 到固定 API 主机，不允许用户输入覆盖 URL、Header Host 或协议。
+
+## 应用层限流与审计
+
+后端会记录 `security_events`，用于排查登录失败、登录冷却、验证码限流、CSRF 拒绝、请求体过大、会话失效和管理员敏感操作。IP、设备和邮箱等标识入库前使用 `SECRET_KEY` 派生哈希，避免直接保存原始标识。
+
+默认限流策略：
+
+- 登录按 IP/设备限流，邮箱连续失败后进入冷却。
+- 注册和重置验证码同时按邮箱与 IP/设备限流。
+- 已登录 API 按账号和设备限流，普通、Premium、管理员使用不同额度。
+- CEAC/GTS 手动查询和业务邮件仍保留账号级每日额度。
 
 ## Nginx 安全基线
 

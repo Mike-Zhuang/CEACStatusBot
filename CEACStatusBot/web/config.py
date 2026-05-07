@@ -41,6 +41,27 @@ class Settings:
             ).split(",")
             if origin.strip()
         ]
+        self.cookieSecure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+        self.allowedHosts = [
+            host.strip()
+            for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,ceac.mikezhuang.cn").split(",")
+            if host.strip()
+        ]
+        self.trustedProxyIps = {
+            ip.strip()
+            for ip in os.getenv("TRUSTED_PROXY_IPS", "127.0.0.1,::1").split(",")
+            if ip.strip()
+        }
+        self.apiMaxBodyBytes = max(1024, int(os.getenv("API_MAX_BODY_BYTES", "131072")))
+        self.sessionIdleTimeoutMinutes = max(5, int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "720")))
+        self.sessionAbsoluteTimeoutDays = max(1, int(os.getenv("SESSION_ABSOLUTE_TIMEOUT_DAYS", "14")))
+        self.authLoginIpDeviceLimitPerMinute = max(1, int(os.getenv("AUTH_LOGIN_IP_DEVICE_LIMIT_PER_MINUTE", "10")))
+        self.authLoginEmailFailureLimitPer15Minutes = max(1, int(os.getenv("AUTH_LOGIN_EMAIL_FAILURE_LIMIT_PER_15_MINUTES", "5")))
+        self.authCodeEmailLimitPerHour = max(1, int(os.getenv("AUTH_CODE_EMAIL_LIMIT_PER_HOUR", "3")))
+        self.authCodeIpDeviceLimitPer10Minutes = max(1, int(os.getenv("AUTH_CODE_IP_DEVICE_LIMIT_PER_10_MINUTES", "3")))
+        self.standardApiLimitPerMinute = max(1, int(os.getenv("STANDARD_API_LIMIT_PER_MINUTE", "120")))
+        self.premiumApiLimitPerMinute = max(1, int(os.getenv("PREMIUM_API_LIMIT_PER_MINUTE", "300")))
+        self.adminApiLimitPerMinute = max(1, int(os.getenv("ADMIN_API_LIMIT_PER_MINUTE", "600")))
         self.workerPollIntervalSeconds = max(1, int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "1")))
         self.standardDailyManualQueryLimit = max(1, int(os.getenv("STANDARD_DAILY_MANUAL_QUERY_LIMIT", "1")))
         self.premiumDailyManualQueryLimit = max(1, int(os.getenv("PREMIUM_DAILY_MANUAL_QUERY_LIMIT", "1000")))

@@ -151,6 +151,21 @@ interface AdminUser {
   last_checked_at: string | null;
 }
 
+interface SecurityEvent {
+  id: number;
+  event_type: string;
+  severity: "info" | "warning" | "error";
+  user_id: number | null;
+  user_email: string | null;
+  email_hash: string;
+  ip_hash: string;
+  device_hash: string;
+  actor_summary: string;
+  path: string;
+  detail: string;
+  created_at: string;
+}
+
 interface SystemEmailConfig {
   fromEmail: string;
   host: string;
@@ -286,7 +301,9 @@ const translations = {
     register: "Register",
     registerAction: "Create account",
     rememberLogin: "Remember email and password",
+    rememberAccount: "Remember email",
     rememberPassword: "Remember password",
+    rememberPasswordWarning: "Only use this on a private device. The password is stored in this browser.",
     resetAction: "Reset password",
     resetCodeSent: "If this email exists, a reset code has been sent.",
     resetPassword: "Reset password",
@@ -297,6 +314,10 @@ const translations = {
     send: "Send",
     sendCodeFailed: "Failed to send verification code",
     senderConfig: "Sender configuration",
+    securityEvents: "Security events",
+    securityActor: "Actor",
+    securityEventType: "Event",
+    securitySeverity: "Severity",
     signInFailed: "Operation failed",
     smtpEmail: "Sender email",
     smtpHost: "SMTP server",
@@ -454,7 +475,9 @@ const translations = {
     register: "注册",
     registerAction: "创建账号",
     rememberLogin: "记住账号和密码",
+    rememberAccount: "记住账号",
     rememberPassword: "记住密码",
+    rememberPasswordWarning: "仅建议在私人设备使用；密码会保存在当前浏览器本地。",
     resetAction: "重置密码",
     resetCodeSent: "如果该邮箱存在，重置验证码已发送。",
     resetPassword: "重置密码",
@@ -465,6 +488,10 @@ const translations = {
     send: "发送",
     sendCodeFailed: "验证码发送失败",
     senderConfig: "发件人配置",
+    securityEvents: "安全事件",
+    securityActor: "来源",
+    securityEventType: "事件",
+    securitySeverity: "级别",
     signInFailed: "操作失败",
     smtpEmail: "发件邮箱",
     smtpHost: "SMTP 服务器",
@@ -564,7 +591,10 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-      throw new Error(payload.detail ?? "Request failed");
+    if (response.status === 401) {
+      window.dispatchEvent(new CustomEvent("ceac-session-expired", { detail: payload.detail ?? "Session expired" }));
+    }
+    throw new Error(payload.detail ?? "Request failed");
   }
   return payload as T;
 }
@@ -640,12 +670,14 @@ function isPassportSlotReadyStatus(status: string | null | undefined): boolean {
   return tone === "approved" || tone === "issued";
 }
 
-function getRememberedCredentials(): { email: string; password: string; remember: boolean } {
-  const enabled = localStorage.getItem("rememberLogin") === "true";
+function getRememberedCredentials(): { email: string; password: string; rememberAccount: boolean; rememberPassword: boolean } {
+  const rememberPassword = localStorage.getItem("rememberLogin") === "true" || localStorage.getItem("rememberPassword") === "true";
+  const rememberAccount = rememberPassword || localStorage.getItem("rememberAccount") !== "false";
   return {
-    email: localStorage.getItem("rememberedEmail") ?? "",
-    password: enabled ? localStorage.getItem("rememberedPassword") ?? "" : "",
-    remember: enabled,
+    email: rememberAccount ? localStorage.getItem("rememberedEmail") ?? "" : "",
+    password: rememberPassword ? localStorage.getItem("rememberedPassword") ?? "" : "",
+    rememberAccount,
+    rememberPassword,
   };
 }
 
@@ -663,6 +695,7 @@ export function App() {
   const [passportSlotHistory, setPassportSlotHistory] = useState<PassportSlotHistoryItem[]>([]);
   const [passportSlotIdentifier, setPassportSlotIdentifier] = useState("");
   const [queryRuns, setQueryRuns] = useState<QueryRun[]>([]);
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [systemEmailConfig, setSystemEmailConfig] = useState<SystemEmailConfig | null>(null);
   const [systemEmailForm, setSystemEmailForm] = useState<SystemEmailForm>({
     fromEmail: "",
@@ -682,7 +715,8 @@ export function App() {
   const rememberedCredentials = useMemo(getRememberedCredentials, []);
   const [authEmail, setAuthEmail] = useState(rememberedCredentials.email);
   const [authPassword, setAuthPassword] = useState(rememberedCredentials.password);
-  const [rememberLogin, setRememberLogin] = useState(rememberedCredentials.remember);
+  const [rememberAccount, setRememberAccount] = useState(rememberedCredentials.rememberAccount);
+  const [rememberPassword, setRememberPassword] = useState(rememberedCredentials.rememberPassword);
   const [registerCode, setRegisterCode] = useState("");
   const [resetCode, setResetCode] = useState("");
   const [resetConfirmPassword, setResetConfirmPassword] = useState("");
@@ -715,6 +749,18 @@ export function App() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    const handleSessionExpired = (event: Event) => {
+      const detail = event instanceof CustomEvent ? String(event.detail || "") : "";
+      setUser(null);
+      setCases([]);
+      setHistory([]);
+      showMessage(detail || (languageMode === "zh" ? "登录已超时，请重新登录。" : "Session expired. Please sign in again."), "auth");
+    };
+    window.addEventListener("ceac-session-expired", handleSessionExpired);
+    return () => window.removeEventListener("ceac-session-expired", handleSessionExpired);
+  }, [languageMode]);
 
   const selectedCase = useMemo(
     () => cases.find((item) => item.id === selectedCaseId) ?? cases[0] ?? null,
@@ -756,15 +802,17 @@ export function App() {
   }
 
   async function loadAdminData() {
-    const [runsPayload, casesPayload, usersPayload, systemEmailPayload] = await Promise.all([
+    const [runsPayload, casesPayload, usersPayload, systemEmailPayload, securityEventsPayload] = await Promise.all([
       requestJson<{ runs: QueryRun[] }>("/api/admin/query-runs"),
       requestJson<{ cases: CeacCase[] }>("/api/admin/cases"),
       requestJson<{ users: AdminUser[] }>("/api/admin/users"),
       requestJson<{ config: SystemEmailConfig }>("/api/admin/system-email"),
+      requestJson<{ events: SecurityEvent[] }>("/api/admin/security-events?limit=200"),
     ]);
     setQueryRuns(runsPayload.runs);
     setAdminCases(casesPayload.cases);
     setAdminUsers(usersPayload.users);
+    setSecurityEvents(securityEventsPayload.events);
     setSystemEmailConfig(systemEmailPayload.config);
     setSystemEmailForm({
       fromEmail: systemEmailPayload.config.fromEmail,
@@ -829,14 +877,21 @@ export function App() {
         method: "POST",
         body: JSON.stringify(body),
       });
-      if (authMode === "login" && rememberLogin) {
-        localStorage.setItem("rememberLogin", "true");
+      if (authMode === "login" && rememberAccount) {
+        localStorage.setItem("rememberAccount", "true");
         localStorage.setItem("rememberedEmail", authEmail);
+      } else if (authMode === "login") {
+        localStorage.setItem("rememberAccount", "false");
+        localStorage.removeItem("rememberedEmail");
+      }
+      if (authMode === "login" && rememberPassword) {
+        localStorage.setItem("rememberPassword", "true");
+        localStorage.removeItem("rememberLogin");
         localStorage.setItem("rememberedPassword", authPassword);
       } else if (authMode === "login") {
         localStorage.removeItem("rememberLogin");
+        localStorage.removeItem("rememberPassword");
         localStorage.removeItem("rememberedPassword");
-        localStorage.setItem("rememberedEmail", authEmail);
       }
       setUser(payload.user);
       setProfileForm({ email: payload.user.email, currentPassword: "", newPassword: "", confirmPassword: "" });
@@ -1262,10 +1317,26 @@ export function App() {
             </label>
             {authMode === "login" && (
               <div className="auth-options">
-                <label className="checkbox">
-                  <input type="checkbox" checked={rememberLogin} onChange={(event) => setRememberLogin(event.target.checked)} />
-                  <span className="body-sm">{t("rememberPassword")}</span>
-                </label>
+                <div className="auth-remember-options">
+                  <label className="checkbox">
+                    <input type="checkbox" checked={rememberAccount} onChange={(event) => setRememberAccount(event.target.checked)} />
+                    <span className="body-sm">{t("rememberAccount")}</span>
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={rememberPassword}
+                      onChange={(event) => {
+                        setRememberPassword(event.target.checked);
+                        if (event.target.checked) {
+                          setRememberAccount(true);
+                        }
+                      }}
+                    />
+                    <span className="body-sm">{t("rememberPassword")}</span>
+                  </label>
+                  {rememberPassword && <p className="field-hint">{t("rememberPasswordWarning")}</p>}
+                </div>
                 <button type="button" className="text-button" onClick={() => { setAuthMode("forgot"); showMessage(""); }}>
                   {t("forgotPassword")}
                 </button>
@@ -1523,6 +1594,7 @@ export function App() {
           <AdminPanel
             users={adminUsers}
             queryRuns={queryRuns}
+            securityEvents={securityEvents}
             cases={adminCases}
             reload={loadAdminData}
             t={t}
@@ -1876,6 +1948,7 @@ function ProfilePanel(props: {
 function AdminPanel(props: {
   users: AdminUser[];
   queryRuns: QueryRun[];
+  securityEvents: SecurityEvent[];
   cases: CeacCase[];
   reload: () => Promise<void>;
   t: (key: TranslationKey) => string;
@@ -1893,6 +1966,7 @@ function AdminPanel(props: {
   const [priorityDrafts, setPriorityDrafts] = useState<Record<number, string>>({});
   const [collapsedAdminUsers, setCollapsedAdminUsers] = useState<Record<number, boolean>>({});
   const [collapsedLogUsers, setCollapsedLogUsers] = useState<Record<string, boolean>>({});
+  const [collapsedSecurityActors, setCollapsedSecurityActors] = useState<Record<string, boolean>>({});
   const casesByUserId = useMemo(() => {
     const grouped = new Map<number, CeacCase[]>();
     for (const item of props.cases) {
@@ -1908,11 +1982,22 @@ function AdminPanel(props: {
     }
     return Array.from(grouped.entries()).sort(([emailA], [emailB]) => emailA.localeCompare(emailB));
   }, [props.queryRuns, props.t]);
+  const securityEventsByActor = useMemo(() => {
+    const grouped = new Map<string, SecurityEvent[]>();
+    for (const event of props.securityEvents) {
+      const actor = event.user_email || event.actor_summary || event.email_hash.slice(0, 12) || props.t("triggerUnknown");
+      grouped.set(actor, [...(grouped.get(actor) ?? []), event]);
+    }
+    return Array.from(grouped.entries()).sort(([actorA], [actorB]) => actorA.localeCompare(actorB));
+  }, [props.securityEvents, props.t]);
   const toggleLogUser = (email: string) => {
     setCollapsedLogUsers((current) => ({ ...current, [email]: !current[email] }));
   };
   const toggleAdminUser = (userId: number) => {
     setCollapsedAdminUsers((current) => ({ ...current, [userId]: !(current[userId] ?? true) }));
+  };
+  const toggleSecurityActor = (actor: string) => {
+    setCollapsedSecurityActors((current) => ({ ...current, [actor]: !(current[actor] ?? false) }));
   };
   return (
     <div className="stack">
@@ -2166,6 +2251,52 @@ function AdminPanel(props: {
             );
           })}
           {props.queryRuns.length === 0 && <p className="empty-state">{props.t("noLogs")}</p>}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2 className="headline">{props.t("securityEvents")}</h2>
+          <button className="button secondary" onClick={props.reload}>{props.t("refresh")}</button>
+        </div>
+        <div className="log-groups">
+          {securityEventsByActor.map(([actor, events]) => {
+            const isCollapsed = collapsedSecurityActors[actor] ?? false;
+            return (
+              <section key={actor} className={`log-group ${isCollapsed ? "collapsed" : ""}`}>
+                <button type="button" className="log-group-header" onClick={() => toggleSecurityActor(actor)}>
+                  <span className="log-group-title">
+                    {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                    <span>{actor}</span>
+                  </span>
+                  <span className="status-badge">{events.length} {props.t("logItems")}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="log-card-list visible">
+                    {events.map((event) => (
+                      <div key={event.id} className="log-card">
+                        <div className="log-card-header">
+                          <span>{formatTime(event.created_at, props.languageMode)}</span>
+                          <span className={`status-badge ${event.severity === "warning" || event.severity === "error" ? "error" : "success"}`}>
+                            {event.severity}
+                          </span>
+                        </div>
+                        <div className="log-card-grid">
+                          <Metric label={props.t("securityEventType")} value={event.event_type} />
+                          <Metric label={props.t("securityActor")} value={event.actor_summary || event.user_email || props.t("triggerUnknown")} />
+                          <Metric label={props.t("profile")} value={event.user_email || props.t("triggerUnknown")} />
+                          <Metric label={props.t("securitySeverity")} value={event.severity} />
+                          <Metric label="Path" value={event.path || "-"} />
+                          <Metric label={props.t("changeContent")} value={event.detail || "-"} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+          {props.securityEvents.length === 0 && <p className="empty-state">{props.t("noLogs")}</p>}
         </div>
       </section>
     </div>

@@ -86,7 +86,19 @@ Open `http://127.0.0.1:5173`. VS Code debug configuration lives in `.vscode/laun
 | `SYSTEM_SMTP_USE_SSL` | `true` | Whether to use SMTP SSL |
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Frontend origins allowed to access the backend |
 | `CSRF_TRUSTED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Trusted Origin / Referer values for sensitive requests |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1,ceac.mikezhuang.cn` | Host header allowlist enforced by the app |
+| `TRUSTED_PROXY_IPS` | `127.0.0.1,::1` | Reverse proxies whose `X-Forwarded-For` value is trusted |
+| `API_MAX_BODY_BYTES` | `131072` | Maximum API request body size |
 | `COOKIE_SECURE` | `false` | Defaults to `false` locally. Must be `true` behind HTTPS in production |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | `720` | Automatic logout after inactivity |
+| `SESSION_ABSOLUTE_TIMEOUT_DAYS` | `14` | Maximum database session lifetime |
+| `AUTH_LOGIN_IP_DEVICE_LIMIT_PER_MINUTE` | `10` | Login attempt limit per IP/device |
+| `AUTH_LOGIN_EMAIL_FAILURE_LIMIT_PER_15_MINUTES` | `5` | Failed-login threshold before account/email cooldown |
+| `AUTH_CODE_EMAIL_LIMIT_PER_HOUR` | `3` | Verification-code emails per address per hour |
+| `AUTH_CODE_IP_DEVICE_LIMIT_PER_10_MINUTES` | `3` | Verification-code requests per IP/device window |
+| `STANDARD_API_LIMIT_PER_MINUTE` | `120` | Authenticated API limit for standard accounts |
+| `PREMIUM_API_LIMIT_PER_MINUTE` | `300` | Authenticated API limit for Premium accounts |
+| `ADMIN_API_LIMIT_PER_MINUTE` | `600` | Authenticated API limit for admins |
 | `WORKER_POLL_INTERVAL_SECONDS` | `1` | Worker polling interval for the SQLite job queue. GTS midnight burst jobs need second-level pickup |
 | `STANDARD_DAILY_MANUAL_QUERY_LIMIT` | `1` | Daily CEAC/GTS manual query limit for standard accounts |
 | `PREMIUM_DAILY_MANUAL_QUERY_LIMIT` | `1000` | Daily CEAC/GTS manual query limit for Premium accounts |
@@ -130,6 +142,8 @@ Passport appointment slot monitoring uses the same-origin GTS API flow: authenti
 - The master key is stored in a local key file outside the repository. Do not write it into code, README files, `backend.env`, or GitHub.
 - Production cookies must use `HttpOnly + SameSite=Lax + Secure`.
 - All sensitive API requests validate `Origin` / `Referer`. Production should only trust `https://ceac.mikezhuang.cn`.
+- Application-level defenses include anonymous device cookies, SQLite-backed IP/device/account/email rate limits, login cooldowns, database-backed sessions with idle timeout, request body limits, Host allowlisting, and security-event audit logs.
+- The optional `Remember password` checkbox stores the password in the browser local storage and should only be used on private devices.
 - The CEAC scraper target is fixed to `https://ceac.state.gov`; the GTS slot query target is fixed to `https://scheduling-api.gtspremium.com`. User input cannot affect request hosts or URLs.
 - Production entry goes through the HTTPS domain only. Port 8010 is not a public entry point.
 - Nginx config sets connection timeouts, request rate limits, security headers, and only enables TLS 1.2 / TLS 1.3.

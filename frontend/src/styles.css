@@ -253,9 +253,14 @@ input:disabled {
 
 .auth-options {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.auth-remember-options {
+  display: grid;
+  gap: 6px;
 }
 
 /* Form Inputs */
@@ -1115,6 +1120,12 @@ select:focus {
 
 .log-card-list {
   display: none;
+}
+
+.log-card-list.visible {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
 }
 
 .log-table {

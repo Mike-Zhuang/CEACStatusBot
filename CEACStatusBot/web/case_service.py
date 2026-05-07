@@ -132,7 +132,7 @@ def upsertSmtpConfig(connection: Any, userId: int, smtpConfig: Any) -> None:
         """,
         (
             userId,
-            smtpConfig.fromEmail,
+            str(smtpConfig.fromEmail),
             smtpConfig.host,
             smtpConfig.port,
             int(smtpConfig.useSsl),
@@ -172,7 +172,7 @@ def createCase(userId: int, payload: CeacCaseInput) -> dict[str, Any]:
                 encryptSecret(payload.applicationNum),
                 encryptSecret(payload.passportNumber),
                 encryptSecret(payload.surname),
-                encryptSecret(payload.receiveEmail),
+                encryptSecret(str(payload.receiveEmail)),
                 payload.senderMode,
                 int(payload.isEnabled),
                 int(payload.emailNotificationsEnabled),
