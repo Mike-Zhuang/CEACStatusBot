@@ -1983,12 +1983,16 @@ function AdminPanel(props: {
     return Array.from(grouped.entries()).sort(([emailA], [emailB]) => emailA.localeCompare(emailB));
   }, [props.queryRuns, props.t]);
   const securityEventsByActor = useMemo(() => {
-    const grouped = new Map<string, SecurityEvent[]>();
+    const grouped = new Map<string, { label: string; events: SecurityEvent[] }>();
     for (const event of props.securityEvents) {
-      const actor = event.actor_summary || event.user_email || event.email_hash.slice(0, 12) || props.t("triggerUnknown");
-      grouped.set(actor, [...(grouped.get(actor) ?? []), event]);
+      const key = event.email_hash || event.actor_summary || event.device_hash || props.t("triggerUnknown");
+      const current = grouped.get(key);
+      const nextLabel = event.user_email || current?.label || event.actor_summary || event.email_hash.slice(0, 12) || props.t("triggerUnknown");
+      grouped.set(key, { label: nextLabel, events: [...(current?.events ?? []), event] });
     }
-    return Array.from(grouped.entries()).sort(([actorA], [actorB]) => actorA.localeCompare(actorB));
+    return Array.from(grouped.entries())
+      .map(([key, value]) => ({ key, label: value.label, events: value.events }))
+      .sort((groupA, groupB) => groupA.label.localeCompare(groupB.label));
   }, [props.securityEvents, props.t]);
   const toggleLogUser = (email: string) => {
     setCollapsedLogUsers((current) => ({ ...current, [email]: !current[email] }));
@@ -2260,20 +2264,20 @@ function AdminPanel(props: {
           <button className="button secondary" onClick={props.reload}>{props.t("refresh")}</button>
         </div>
         <div className="log-groups">
-          {securityEventsByActor.map(([actor, events]) => {
-            const isCollapsed = collapsedSecurityActors[actor] ?? true;
+          {securityEventsByActor.map((group) => {
+            const isCollapsed = collapsedSecurityActors[group.key] ?? true;
             return (
-              <section key={actor} className={`log-group ${isCollapsed ? "collapsed" : ""}`}>
-                <button type="button" className="log-group-header" onClick={() => toggleSecurityActor(actor)}>
+              <section key={group.key} className={`log-group ${isCollapsed ? "collapsed" : ""}`}>
+                <button type="button" className="log-group-header" onClick={() => toggleSecurityActor(group.key)}>
                   <span className="log-group-title">
                     {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                    <span>{actor}</span>
+                    <span>{group.label}</span>
                   </span>
-                  <span className="status-badge">{events.length} {props.t("logItems")}</span>
+                  <span className="status-badge">{group.events.length} {props.t("logItems")}</span>
                 </button>
                 {!isCollapsed && (
                   <div className="log-card-list visible">
-                    {events.map((event) => (
+                    {group.events.map((event) => (
                       <div key={event.id} className="log-card">
                         <div className="log-card-header">
                           <span>{formatTime(event.created_at, props.languageMode)}</span>
