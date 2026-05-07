@@ -18,7 +18,9 @@ from .case_service import (
     listHistory,
     migrateEncryptedFields,
     patchCase,
+    restoreCaseAutomaticQuery,
     sendCurrentStatusEmail,
+    updateUserWorkerPriority,
 )
 from .config import getSettings
 from .database import getConnection, initializeDatabase, utcNowIso
@@ -44,6 +46,7 @@ from .schemas import (
     RegisterRequest,
     SendCodeRequest,
     SystemSmtpConfigInput,
+    WorkerPriorityPatch,
 )
 from .security import (
     clearSessionCookie,
@@ -378,7 +381,10 @@ def apiCreateCase(payload: CeacCaseInput, user: dict = Depends(currentUserDepend
 
 @app.patch("/api/cases/{caseId}")
 def apiPatchCase(caseId: int, payload: CeacCasePatch, user: dict = Depends(currentUserDependency)) -> dict:
-    case = patchCase(caseId, int(user["id"]), payload)
+    try:
+        case = patchCase(caseId, int(user["id"]), payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not case:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="签证档案不存在")
     return {"case": case}
@@ -491,6 +497,7 @@ def adminUsers(_: dict = Depends(adminDependency)) -> dict:
                 u.id,
                 u.email,
                 u.role,
+                u.worker_priority,
                 u.is_email_verified,
                 u.created_at,
                 u.updated_at,
@@ -505,9 +512,25 @@ def adminUsers(_: dict = Depends(adminDependency)) -> dict:
     return {"users": users}
 
 
+@app.patch("/api/admin/users/{userId}/worker-priority")
+def adminPatchUserWorkerPriority(userId: int, payload: WorkerPriorityPatch, _: dict = Depends(adminDependency)) -> dict:
+    user = updateUserWorkerPriority(userId, payload.workerPriority)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    return {"user": user}
+
+
 @app.get("/api/admin/cases")
 def adminCases(_: dict = Depends(adminDependency)) -> dict:
     return {"cases": listCases()}
+
+
+@app.post("/api/admin/cases/{caseId}/restore-ceac-auto-query")
+def adminRestoreCaseAutomaticQuery(caseId: int, _: dict = Depends(adminDependency)) -> dict:
+    case = restoreCaseAutomaticQuery(caseId)
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="签证档案不存在")
+    return {"case": case}
 
 
 @app.get("/api/admin/cases/{caseId}/history")

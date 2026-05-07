@@ -115,6 +115,22 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
   "select c.display_name, m.is_enabled, m.last_slot_count, m.next_check_at, m.last_error_message from passport_slot_monitors m join ceac_cases c on c.id = m.case_id order by m.updated_at desc limit 20;"
 ```
 
+GTS 进入 `no_slot` 或 `has_slot` 后会自动停止并锁定对应 CEAC 自动查询；普通用户不能恢复，管理员可在后台恢复。发现 slot 后 GTS 轮询会放缓到约每小时一次，不再参与零点加频；用户预约成功后应在站内点击“我已预约，停止监控”。查看被 GTS 接管的档案：
+
+```bash
+sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
+  ".headers on" ".mode column" \
+  "select id, display_name, is_enabled, ceac_auto_locked_by_passport_slot, next_check_at from ceac_cases where ceac_auto_locked_by_passport_slot = 1 order by updated_at desc;"
+```
+
+Worker 领取队列时会按账号优先级排序，数值越小越先处理；优先级相同则保持任务 ID FIFO：
+
+```bash
+sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
+  ".headers on" ".mode column" \
+  "select id, email, role, worker_priority from users order by worker_priority asc, id asc;"
+```
+
 ## 备份
 
 建议至少备份三类文件：

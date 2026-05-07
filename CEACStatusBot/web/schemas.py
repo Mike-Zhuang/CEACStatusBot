@@ -83,3 +83,7 @@ class PassportSlotMonitorInput(BaseModel):
 class PassportSlotMonitorPatch(BaseModel):
     isEnabled: bool | None = None
     emailNotificationsEnabled: bool | None = None
+
+
+class WorkerPriorityPatch(BaseModel):
+    workerPriority: int = Field(ge=1, le=999)

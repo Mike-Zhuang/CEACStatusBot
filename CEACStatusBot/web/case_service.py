@@ -59,6 +59,7 @@ def normalizeCaseRow(row: dict[str, Any]) -> dict[str, Any]:
         "receiveEmail": row["receive_email"],
         "senderMode": row["sender_mode"],
         "isEnabled": bool(row["is_enabled"]),
+        "ceacAutoLockedByPassportSlot": bool(row.get("ceac_auto_locked_by_passport_slot", 0)),
         "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
         "nextCheckAt": row["next_check_at"],
         "lastCheckedAt": row["last_checked_at"],
@@ -174,11 +175,13 @@ def createCase(userId: int, payload: CeacCaseInput) -> dict[str, Any]:
     return case
 
 
-def patchCase(caseId: int, userId: int, payload: CeacCasePatch) -> dict[str, Any] | None:
+def patchCase(caseId: int, userId: int, payload: CeacCasePatch, *, allowLockedEnable: bool = False) -> dict[str, Any] | None:
     current = getCase(caseId, userId)
     if not current:
         return None
     data = payload.model_dump(exclude_unset=True)
+    if data.get("isEnabled") is True and current.get("ceacAutoLockedByPassportSlot") and not allowLockedEnable:
+        raise ValueError("GTS 监控已接管该档案，普通用户不能恢复 CEAC 自动查询；请联系管理员恢复。")
     columnMap = {
         "displayName": "display_name",
         "location": "location",
@@ -207,6 +210,9 @@ def patchCase(caseId: int, userId: int, payload: CeacCasePatch) -> dict[str, Any
                 value = int(value)
                 assignments.append("next_check_at = ?")
                 values.append(computeNextCheckAt() if value else None)
+                if value and allowLockedEnable:
+                    assignments.append("ceac_auto_locked_by_passport_slot = ?")
+                    values.append(0)
             if key == "emailNotificationsEnabled":
                 value = int(value)
             assignments.append(f"{column} = ?")
@@ -219,6 +225,49 @@ def patchCase(caseId: int, userId: int, payload: CeacCasePatch) -> dict[str, Any
             tuple(values),
         )
     return getCase(caseId, userId)
+
+
+def restoreCaseAutomaticQuery(caseId: int) -> dict[str, Any] | None:
+    now = utcNowIso()
+    with getConnection() as connection:
+        row = connection.execute(
+            """
+            SELECT c.user_id, s.status AS last_status
+            FROM ceac_cases c
+            LEFT JOIN status_catalog s ON s.id = c.last_status_id
+            WHERE c.id = ?
+            """,
+            (caseId,),
+        ).fetchone()
+        if not row:
+            return None
+        connection.execute(
+            """
+            UPDATE ceac_cases
+            SET is_enabled = 1,
+                ceac_auto_locked_by_passport_slot = 0,
+                next_check_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (computeNextCheckAt(status=row.get("last_status")), now, caseId),
+        )
+    return getCase(caseId, int(row["user_id"]))
+
+
+def updateUserWorkerPriority(userId: int, workerPriority: int) -> dict[str, Any] | None:
+    now = utcNowIso()
+    with getConnection() as connection:
+        cursor = connection.execute(
+            "UPDATE users SET worker_priority = ?, updated_at = ? WHERE id = ?",
+            (workerPriority, now, userId),
+        )
+        if cursor.rowcount == 0:
+            return None
+        return connection.execute(
+            "SELECT id, email, role, worker_priority, is_email_verified, created_at, updated_at FROM users WHERE id = ?",
+            (userId,),
+        ).fetchone()
 
 
 def deleteCase(caseId: int, userId: int) -> bool:
@@ -645,9 +694,12 @@ def claimNextQueryJob(workerId: str | None = None) -> dict[str, Any] | None:
     with getConnection() as connection:
         row = connection.execute(
             """
-            SELECT * FROM query_jobs
-            WHERE status = 'queued'
-            ORDER BY id ASC
+            SELECT j.*
+            FROM query_jobs j
+            JOIN ceac_cases c ON c.id = j.case_id
+            JOIN users u ON u.id = c.user_id
+            WHERE j.status = 'queued'
+            ORDER BY u.worker_priority ASC, j.id ASC
             LIMIT 1
             """,
         ).fetchone()

@@ -904,13 +904,24 @@ select:focus {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.admin-priority-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.admin-priority-row input {
+  max-width: 160px;
+}
+
 .case-list.compact {
   gap: 6px;
 }
 
 .admin-case-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(130px, 0.8fr) auto;
+  grid-template-columns: minmax(140px, 1fr) minmax(130px, 0.8fr) auto auto;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
@@ -919,6 +930,12 @@ select:focus {
   color: var(--ink-muted);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .log-table-wrap {
@@ -993,6 +1010,7 @@ select:focus {
 @media (max-width: 760px) {
   .admin-user-header,
   .admin-user-metrics,
+  .admin-priority-row,
   .admin-case-row {
     grid-template-columns: 1fr;
   }

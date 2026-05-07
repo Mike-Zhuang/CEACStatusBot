@@ -43,6 +43,7 @@ def initializeDatabase() -> None:
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'user',
+                worker_priority INTEGER NOT NULL DEFAULT 100,
                 is_email_verified INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -93,6 +94,7 @@ def initializeDatabase() -> None:
                 receive_email TEXT NOT NULL,
                 sender_mode TEXT NOT NULL DEFAULT 'system',
                 is_enabled INTEGER NOT NULL DEFAULT 1,
+                ceac_auto_locked_by_passport_slot INTEGER NOT NULL DEFAULT 0,
                 email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
                 next_check_at TEXT,
                 last_checked_at TEXT,
@@ -191,9 +193,21 @@ def initializeDatabase() -> None:
             row["name"]
             for row in connection.execute("PRAGMA table_info(ceac_cases)").fetchall()
         }
+        userColumns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "worker_priority" not in userColumns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN worker_priority INTEGER NOT NULL DEFAULT 100",
+            )
         if "email_notifications_enabled" not in columns:
             connection.execute(
                 "ALTER TABLE ceac_cases ADD COLUMN email_notifications_enabled INTEGER NOT NULL DEFAULT 1",
+            )
+        if "ceac_auto_locked_by_passport_slot" not in columns:
+            connection.execute(
+                "ALTER TABLE ceac_cases ADD COLUMN ceac_auto_locked_by_passport_slot INTEGER NOT NULL DEFAULT 0",
             )
         if "last_trigger_type" not in columns:
             connection.execute(

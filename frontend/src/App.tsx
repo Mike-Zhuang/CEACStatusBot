@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  CheckCircle2,
   Mail,
   History,
   LogOut,
@@ -37,6 +38,7 @@ interface CeacCase {
   receiveEmail: string;
   senderMode: "system" | "custom";
   isEnabled: boolean;
+  ceacAutoLockedByPassportSlot: boolean;
   emailNotificationsEnabled: boolean;
   nextCheckAt: string | null;
   lastCheckedAt: string | null;
@@ -134,6 +136,7 @@ interface AdminUser {
   id: number;
   email: string;
   role: "admin" | "user";
+  worker_priority: number;
   is_email_verified: number;
   created_at: string;
   updated_at: string;
@@ -328,6 +331,8 @@ const translations = {
     passportSlotDisabled: "GTS monitor disabled.",
     passportSlotEmailEnabled: "GTS slot email notifications enabled.",
     passportSlotEmailDisabled: "GTS slot email notifications disabled.",
+    passportSlotBookedStop: "I booked, stop monitor",
+    passportSlotBookedStopped: "Passport appointment monitor stopped. Email settings and history are kept.",
     passportSlotManualQuery: "Check slots now",
     passportSlotTestEmail: "Test GTS email",
     passportSlotTestEmailSending: "Sending GTS monitor test email.",
@@ -344,6 +349,12 @@ const translations = {
     passportSlotLastCount: "Last slot count",
     passportSlotLastError: "Last GTS error",
     passportSlotHistory: "Slot change history",
+    ceacAutoLockedByPassportSlot: "CEAC automatic checks were stopped because GTS indicates the passport is ready for appointment. Only an admin can restore CEAC automatic checks.",
+    restoreCeacAutoQuery: "Restore CEAC auto checks",
+    ceacAutoQueryRestored: "CEAC automatic checks restored.",
+    workerPriority: "Worker priority",
+    saveWorkerPriority: "Save priority",
+    workerPrioritySaved: "Worker priority saved.",
     noPassportSlotMonitor: "No UID/HAL monitor yet",
     noPassportSlotHistory: "No slot changes yet",
   },
@@ -472,6 +483,8 @@ const translations = {
     passportSlotDisabled: "已关闭 GTS 监控。",
     passportSlotEmailEnabled: "已开启 GTS slot 邮件推送。",
     passportSlotEmailDisabled: "已关闭 GTS slot 邮件推送。",
+    passportSlotBookedStop: "我已预约，停止监控",
+    passportSlotBookedStopped: "已停止护照预约监控，邮件开关和历史记录已保留。",
     passportSlotManualQuery: "立即查询 slot",
     passportSlotTestEmail: "测试 GTS 邮件",
     passportSlotTestEmailSending: "正在发送 GTS 监控测试邮件。",
@@ -488,6 +501,12 @@ const translations = {
     passportSlotLastCount: "最近 slot 数量",
     passportSlotLastError: "最近 GTS 错误",
     passportSlotHistory: "slot 变化历史",
+    ceacAutoLockedByPassportSlot: "GTS 已确认护照进入可预约阶段，系统已自动停止该档案的 CEAC 自动查询；只有管理员可以恢复。",
+    restoreCeacAutoQuery: "恢复 CEAC 自动查询",
+    ceacAutoQueryRestored: "已恢复 CEAC 自动查询。",
+    workerPriority: "Worker 优先级",
+    saveWorkerPriority: "保存优先级",
+    workerPrioritySaved: "Worker 优先级已保存。",
     noPassportSlotMonitor: "尚未配置 UID/HAL 监控",
     noPassportSlotHistory: "暂无 slot 变化记录",
   },
@@ -1003,6 +1022,23 @@ export function App() {
     }
   }
 
+  async function confirmPassportSlotBooked(targetCase: CeacCase, targetMonitor: PassportSlotMonitor) {
+    setIsBusy(true);
+    setMessage("");
+    try {
+      const payload = await requestJson<{ monitor: PassportSlotMonitor }>(`/api/cases/${targetCase.id}/passport-slot-monitor`, {
+        method: "PATCH",
+        body: JSON.stringify({ isEnabled: false }),
+      });
+      setPassportSlotMonitor(payload.monitor);
+      setMessage(t("passportSlotBookedStopped"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function togglePassportSlotEmailNotifications(targetCase: CeacCase, targetMonitor: PassportSlotMonitor) {
     setIsBusy(true);
     setMessage("");
@@ -1038,6 +1074,7 @@ export function App() {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
       }
       await loadPassportSlotMonitor(caseId);
+      await loadCases();
       if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
         setMessage(t("passportSlotQuerying"));
         return;
@@ -1072,6 +1109,41 @@ export function App() {
         body: "{}",
       });
       setMessage(t("passportSlotTestEmailSent"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function updateWorkerPriority(userId: number, workerPriority: number) {
+    setIsBusy(true);
+    setMessage("");
+    try {
+      await requestJson<{ user: AdminUser }>(`/api/admin/users/${userId}/worker-priority`, {
+        method: "PATCH",
+        body: JSON.stringify({ workerPriority }),
+      });
+      await loadAdminData();
+      setMessage(t("workerPrioritySaved"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function restoreCeacAutoQuery(caseId: number) {
+    setIsBusy(true);
+    setMessage("");
+    try {
+      await requestJson<{ case: CeacCase }>(`/api/admin/cases/${caseId}/restore-ceac-auto-query`, {
+        method: "POST",
+        body: "{}",
+      });
+      await loadAdminData();
+      await loadCases();
+      setMessage(t("ceacAutoQueryRestored"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
@@ -1288,6 +1360,11 @@ export function App() {
                           </button>
                         </div>
                       )}
+                      {selectedCase.ceacAutoLockedByPassportSlot && (
+                        <div className="notice">
+                          {t("ceacAutoLockedByPassportSlot")}
+                        </div>
+                      )}
                       <div className="two-col metric-grid">
                         <Metric label={t("locationMetric")} value={selectedCase.location} />
                         <Metric label={`${t("applicationId")} / ${t("passport")}`} value={`${selectedCase.applicationNum} / ${selectedCase.passportNumber}`} />
@@ -1334,6 +1411,7 @@ export function App() {
                     saveMonitor={savePassportSlotMonitor}
                     toggleMonitor={togglePassportSlotMonitor}
                     toggleEmailNotifications={togglePassportSlotEmailNotifications}
+                    confirmBooked={confirmPassportSlotBooked}
                     runQuery={runPassportSlotQuery}
                     sendTestEmail={sendPassportSlotTestEmail}
                     isBusy={isBusy}
@@ -1384,6 +1462,8 @@ export function App() {
             systemEmailForm={systemEmailForm}
             setSystemEmailForm={setSystemEmailForm}
             saveSystemEmail={saveSystemEmail}
+            updateWorkerPriority={updateWorkerPriority}
+            restoreCeacAutoQuery={restoreCeacAutoQuery}
             isBusy={isBusy}
           />
         )}
@@ -1481,6 +1561,16 @@ function formatPassportSlotStatus(result: PassportSlotMonitor["lastResult"], t: 
   return result?.statusMessage || t("waitFirstQuery");
 }
 
+function hasSeenPassportSlot(monitor: PassportSlotMonitor | null, history: PassportSlotHistoryItem[]): boolean {
+  if (monitor?.lastResult?.slotStatus === "has_slot" || (monitor?.lastSlotFingerprint ?? "").startsWith("state:has_slot:")) {
+    return true;
+  }
+  return history.some((item) => {
+    const slotStatus = typeof item.rawPayload?.slotStatus === "string" ? item.rawPayload.slotStatus : "";
+    return slotStatus === "has_slot" || item.slotFingerprint.startsWith("state:has_slot:");
+  });
+}
+
 function PassportSlotMonitorPanel(props: {
   selectedCase: CeacCase;
   monitor: PassportSlotMonitor | null;
@@ -1490,6 +1580,7 @@ function PassportSlotMonitorPanel(props: {
   saveMonitor: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   toggleMonitor: (targetCase: CeacCase, targetMonitor: PassportSlotMonitor) => Promise<void>;
   toggleEmailNotifications: (targetCase: CeacCase, targetMonitor: PassportSlotMonitor) => Promise<void>;
+  confirmBooked: (targetCase: CeacCase, targetMonitor: PassportSlotMonitor) => Promise<void>;
   runQuery: (caseId: number) => Promise<void>;
   sendTestEmail: (caseId: number) => Promise<void>;
   isBusy: boolean;
@@ -1497,6 +1588,7 @@ function PassportSlotMonitorPanel(props: {
   languageMode: LanguageMode;
 }) {
   const isReadyStatus = isPassportSlotReadyStatus(props.selectedCase.lastStatus);
+  const shouldShowBookedStop = Boolean(props.monitor?.isEnabled && hasSeenPassportSlot(props.monitor, props.history));
   return (
     <section className={`panel passport-slot-panel ${isReadyStatus ? "ready" : ""}`}>
       <div className="panel-title">
@@ -1590,6 +1682,16 @@ function PassportSlotMonitorPanel(props: {
             >
               <Mail size={16} /> {props.t("passportSlotTestEmail")}
             </button>
+            {shouldShowBookedStop && (
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => props.confirmBooked(props.selectedCase, props.monitor!)}
+                disabled={props.isBusy}
+              >
+                <CheckCircle2 size={16} /> {props.t("passportSlotBookedStop")}
+              </button>
+            )}
           </div>
           <div className="mini-history">
             <div className="caption">{props.t("passportSlotHistory")}</div>
@@ -1685,9 +1787,12 @@ function AdminPanel(props: {
   systemEmailForm: SystemEmailForm;
   setSystemEmailForm: React.Dispatch<React.SetStateAction<SystemEmailForm>>;
   saveSystemEmail: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  updateWorkerPriority: (userId: number, workerPriority: number) => Promise<void>;
+  restoreCeacAutoQuery: (caseId: number) => Promise<void>;
   isBusy: boolean;
 }) {
   const form = props.systemEmailForm;
+  const [priorityDrafts, setPriorityDrafts] = useState<Record<number, string>>({});
   const casesByUserId = useMemo(() => {
     const grouped = new Map<number, CeacCase[]>();
     for (const item of props.cases) {
@@ -1782,6 +1887,26 @@ function AdminPanel(props: {
                   </div>
                   <span className="status-badge">{adminUser.case_count} {props.t("casesOwned")}</span>
                 </div>
+                <div className="admin-priority-row">
+                  <label>
+                    {props.t("workerPriority")}
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={priorityDrafts[adminUser.id] ?? String(adminUser.worker_priority)}
+                      onChange={(event) => setPriorityDrafts({ ...priorityDrafts, [adminUser.id]: event.target.value })}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    disabled={props.isBusy}
+                    onClick={() => props.updateWorkerPriority(adminUser.id, Number(priorityDrafts[adminUser.id] ?? adminUser.worker_priority))}
+                  >
+                    {props.t("saveWorkerPriority")}
+                  </button>
+                </div>
                 <div className="admin-user-metrics">
                   <Metric label={props.t("lastQuery")} value={formatTime(adminUser.last_checked_at, props.languageMode)} />
                   <Metric label={props.t("createdAt")} value={formatTime(adminUser.created_at, props.languageMode)} />
@@ -1793,6 +1918,16 @@ function AdminPanel(props: {
                       <span>{item.displayName}</span>
                       <span className="mono-text">{item.applicationNum}</span>
                       <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? props.t("waitFirstQuery")}</span>
+                      {item.ceacAutoLockedByPassportSlot && (
+                        <button
+                          type="button"
+                          className="button secondary compact-button"
+                          disabled={props.isBusy}
+                          onClick={() => props.restoreCeacAutoQuery(item.id)}
+                        >
+                          {props.t("restoreCeacAutoQuery")}
+                        </button>
+                      )}
                     </div>
                   ))}
                   {ownedCases.length === 0 && <p className="empty-state compact">{props.t("noCases")}</p>}

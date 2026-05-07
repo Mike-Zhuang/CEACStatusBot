@@ -65,10 +65,7 @@ def computeNextPassportSlotCheckAt(
         minutes = random.randint(10, 20)
         return (base + timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
     if slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT:
-        if changed or previousSlotStatus != PASSPORT_SLOT_STATUS_HAS_SLOT:
-            return (base + timedelta(seconds=30)).replace(microsecond=0).isoformat()
-        if hasSlotStableCount <= 1:
-            return (base + timedelta(seconds=60)).replace(microsecond=0).isoformat()
+        return (base + timedelta(hours=1)).replace(microsecond=0).isoformat()
     if slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT:
         return computeNextNoSlotCheckAt(base).isoformat()
     minutes = random.randint(5, 10)
@@ -322,6 +319,20 @@ def normalizeSlots(data: dict[str, Any]) -> list[Any]:
 
 def stableSlotValue(slot: Any) -> Any:
     if isinstance(slot, dict):
+        if "date" in slot and isinstance(slot.get("times"), list):
+            times: list[Any] = []
+            for item in slot["times"]:
+                if isinstance(item, dict):
+                    value = item.get("time") or item.get("startTime") or item.get("dateTime") or item.get("datetime")
+                    if value not in (None, ""):
+                        times.append(str(value))
+                elif item not in (None, ""):
+                    times.append(str(item))
+            return {
+                "date": slot.get("date"),
+                "city": slot.get("city") or slot.get("cityName") or slot.get("location") or slot.get("center"),
+                "times": sorted(times),
+            }
         preferredKeys = [
             "date",
             "time",
@@ -347,6 +358,20 @@ def formatSlotLines(slots: list[Any]) -> list[str]:
     lines: list[str] = []
     for index, slot in enumerate(slots[:20], start=1):
         if isinstance(slot, dict):
+            if "date" in slot and isinstance(slot.get("times"), list):
+                times: list[str] = []
+                for item in slot["times"]:
+                    if isinstance(item, dict):
+                        value = item.get("time") or item.get("startTime") or item.get("dateTime") or item.get("datetime")
+                        if value not in (None, ""):
+                            times.append(str(value))
+                    elif item not in (None, ""):
+                        times.append(str(item))
+                timeText = "、".join(times) if times else "接口未返回具体时间"
+                location = slot.get("city") or slot.get("cityName") or slot.get("location") or slot.get("center")
+                locationText = f"（{location}）" if location else ""
+                lines.append(f"{index}. {slot.get('date')}{locationText}：{timeText}")
+                continue
             parts = []
             for key in ("date", "time", "datetime", "dateTime", "startTime", "endTime", "city", "location", "center"):
                 value = slot.get(key)
@@ -527,7 +552,7 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
                     slotStatus=slotStatus,
                     statusMessage=statusMessage or formatSlotStatus(slotStatus),
                     slotLines=formatSlotLines(slots),
-                    rawSummary=summarizePayload(result.get("raw") if isinstance(result.get("raw"), dict) else result),
+                    rawSummary="",
                 )
                 notificationSent = True
             except Exception as exc:
@@ -563,6 +588,18 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
             if bool(row["is_enabled"])
             else None
         )
+        if success and slotStatus in {PASSPORT_SLOT_STATUS_NO_SLOT, PASSPORT_SLOT_STATUS_HAS_SLOT}:
+            connection.execute(
+                """
+                UPDATE ceac_cases
+                SET is_enabled = 0,
+                    ceac_auto_locked_by_passport_slot = 1,
+                    next_check_at = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (finishedIso, caseId),
+            )
         connection.execute(
             """
             UPDATE passport_slot_monitors
@@ -624,7 +661,6 @@ def sendCurrentPassportSlotEmail(caseId: int, userId: int | None = None) -> dict
     slots = normalizeSlots(result) if isinstance(result, dict) else []
     slotStatus = passportSlotStatusFromResult(result if isinstance(result, dict) else {}, row["last_slot_fingerprint"])
     statusMessage = str(result.get("statusMessage") or formatSlotStatus(slotStatus)) if isinstance(result, dict) else formatSlotStatus(slotStatus)
-    rawSummary = summarizePayload(result) if result else (row["last_error_message"] or "尚未执行过 GTS slot 查询。")
     case = {
         "display_name": row["display_name"],
         "application_num": decryptIfNeeded(row["application_num"]) or row["application_num"],
@@ -641,7 +677,7 @@ def sendCurrentPassportSlotEmail(caseId: int, userId: int | None = None) -> dict
             slotStatus=slotStatus,
             statusMessage=statusMessage,
             slotLines=formatSlotLines(slots),
-            rawSummary=rawSummary,
+            rawSummary="",
             hasSlots=bool(slots),
             isTest=True,
         )
