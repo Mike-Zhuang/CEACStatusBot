@@ -27,8 +27,8 @@ def isIssuedStatus(status: str | None) -> bool:
 def computeNextCheckAt(base: datetime | None = None, status: str | None = None) -> str:
     base = base or datetime.now(UTC)
     if isIssuedStatus(status):
-        nextWeek = (base + timedelta(days=7)).replace(second=0, microsecond=0)
-        return nextWeek.replace(hour=random.randint(0, 23), minute=random.randint(0, 59)).isoformat()
+        nextDay = (base + timedelta(days=1)).replace(second=0, microsecond=0)
+        return nextDay.replace(hour=random.randint(0, 23), minute=random.randint(0, 59)).isoformat()
     nextHour = (base + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
     return (nextHour + timedelta(minutes=random.randint(0, 59))).isoformat()
 
@@ -564,7 +564,7 @@ def handleIssuedDueCase(caseId: int, now: datetime) -> bool:
             SET next_check_at = ?, updated_at = ?
             WHERE id = ? AND is_enabled = 1
             """,
-            (computeNextCheckAt(issuedAt, "Issued"), now.isoformat(), caseId),
+            (computeNextCheckAt(now, "Issued"), now.isoformat(), caseId),
         )
     return True
 

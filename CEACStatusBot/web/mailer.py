@@ -139,7 +139,7 @@ def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None
         lines.extend(
             [
                 "",
-                "提示：该档案已进入 Issued，系统会将自动查询频率降为每周一次。",
+                "提示：该档案已进入 Issued，系统会将自动查询频率降为每天一次。",
                 "你可以登录站内档案详情页停止自动查询；如果一周内未停止，系统将自动停止该档案的自动查询并邮件通知你。",
             ],
         )

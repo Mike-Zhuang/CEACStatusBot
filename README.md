@@ -1,59 +1,61 @@
 # CEACStatusBot Web
 
-CEACStatusBot Web 是一个自托管的美国签证 CEAC 状态监控面板。它提供账号注册登录、邮箱验证码、忘记密码、多个签证档案管理、状态历史、邮件通知、管理员后台和生产安全基线，适合本地开发后部署到自己的服务器向公网开放。
+[中文文档](README.Chinese.md)
 
-本项目是修改版本，遵循 GPLv3 许可证发布。项目保留并改造了 CEAC 状态查询与验证码识别相关思路，感谢原项目 [Andision/CEACStatusBot](https://github.com/Andision/CEACStatusBot)。
+CEACStatusBot Web is a self-hosted U.S. visa CEAC status monitoring dashboard. It provides account registration and login, email verification codes, password reset, multiple visa profiles, status history, email notifications, an admin console, and a production security baseline for deployment on your own server.
 
-## 功能
+This project is a modified version released under the GPLv3 license. It preserves and adapts ideas around CEAC status querying and captcha recognition from the original [Andision/CEACStatusBot](https://github.com/Andision/CEACStatusBot) project.
 
-- FastAPI 后端、SQLite 数据库、APScheduler 入队调度、独立 Worker 消费查询任务。
-- React + Vite + TypeScript 前端控制台，支持暗色 / 亮色模式和中英文切换。
-- 开放注册，注册和忘记密码均通过邮箱验证码完成。
-- 每个用户可创建多个 CEAC 查询档案，并开启或关闭状态更新邮件推送。
-- 每个启用档案每小时随机分钟入队查询，Issued 后降为每周一次并按策略自动停止。
-- CEAC 状态进入 Approved 或 Issued 后，邮件会邀请用户填写 UID/HAL 开启 GTS 护照预约 slot 监控。
-- GTS 护照预约监控绑定到签证档案，默认每 5-10 分钟随机轮询；自动轮询开关和 slot 变化邮件推送开关相互独立。
-- 立即查询会创建手动任务，前端轮询任务状态并刷新档案和时间线；非管理员账号每天有手动查询次数限制。
-- 状态无变化不发邮件；状态或 CEAC 更新时间变化时写入历史并发送通知。
-- 支持系统默认 SMTP，也支持用户自定义 SMTP。
-- 管理员可查看所有用户资料、用户分组档案、状态历史、查询日志和默认发信配置。
-- 查询日志记录手动 / 自动抓取来源、绝对时间、耗时、成功失败和错误信息。
-- 前端包含自定义 SVG favicon / 品牌图标，以及 ICP 备案号底部链接。
+## Features
 
-## 账号初始化
+- FastAPI backend, SQLite database, APScheduler queue scheduler, and a standalone Worker for query jobs.
+- React + Vite + TypeScript frontend console with dark/light themes and Chinese/English language switching.
+- Open registration with email verification for both signup and password reset.
+- Each user can create multiple CEAC query profiles and enable or disable status update email notifications.
+- Enabled profiles are queued once per hour at a random minute. After a profile enters `Issued`, automatic CEAC checks slow down to once per day and stop automatically after one week.
+- When a CEAC profile enters `Approved` or `Issued`, status emails invite the user to enter UID/HAL and enable GTS passport appointment slot monitoring.
+- GTS passport appointment monitoring is bound to a CEAC profile. It polls at a random 5-10 minute interval by default, with separate switches for automatic polling and slot-change email notifications.
+- `Query now` creates manual jobs. The frontend polls job status and refreshes the profile and timeline after completion. Non-admin accounts have a daily manual query limit.
+- No email is sent when status is unchanged. Status changes or CEAC last-updated changes are written to history and trigger notifications.
+- Supports both a system default SMTP sender and per-user custom SMTP settings.
+- Admins can view all users, grouped profiles, status history, query logs, and default sender configuration.
+- Query logs record manual/automatic sources, absolute timestamps, duration, success/failure, and error messages.
+- The frontend includes a custom SVG favicon/brand icon and an optional ICP record footer link.
 
-默认不会自动创建本地测试账号。公网部署时请通过注册流程创建账号，或由管理员直接在生产数据库中创建首个管理员账号。
+## Account Initialization
 
-如果只在本地开发并确实需要演示账号，可以临时设置 `SEED_DEFAULT_USERS=true`，并同时提供 `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD`。不要在公网环境启用该开关。
+Local demo accounts are not created by default. For public deployments, create accounts through the registration flow, or create the first admin account directly in the production database.
 
-## 本地开发
+If you only need local demo accounts during development, temporarily set `SEED_DEFAULT_USERS=true` and provide `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD`. Do not enable this switch in public deployments.
 
-安装后端依赖：
+## Local Development
+
+Install backend dependencies:
 
 ```bash
 pip install uv
 uv sync
 ```
 
-复制环境变量文件：
+Copy the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-启动后端：
+Start the backend:
 
 ```bash
 uv run uvicorn CEACStatusBot.web.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-启动 Worker：
+Start the Worker in another terminal:
 
 ```bash
 uv run python -m CEACStatusBot.web.worker
 ```
 
-启动前端：
+Start the frontend:
 
 ```bash
 cd frontend
@@ -61,90 +63,90 @@ npm install
 npm run dev
 ```
 
-打开 `http://127.0.0.1:5173`。VS Code 调试配置位于 `.vscode/launch.json`，不会自动启动浏览器。
+Open `http://127.0.0.1:5173`. VS Code debug configuration lives in `.vscode/launch.json` and does not automatically open a browser.
 
-## 环境变量
+## Environment Variables
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_PATH` | `ceacstatusbot.sqlite3` | SQLite 数据库路径 |
-| `SECRET_KEY` | 开发默认值 | 会话签名密钥，公网必须修改 |
-| `CREDENTIAL_KEY_FILE` | 空 | AES-256-GCM 主密钥文件路径，生产建议 `/opt/ceacstatusbot-runtime/secrets/credential-master.key` |
-| `ENCRYPTION_KEY` | 空 | 旧 Fernet 密文兼容 / 迁移使用，不作为新凭证主密钥 |
-| `SYSTEM_FROM_EMAIL` | 空 | 系统默认发信邮箱 |
-| `SYSTEM_EMAIL_PASSWORD` | 空 | 系统默认发信邮箱授权码；生产建议由管理员后台保存到加密存储 |
-| `SYSTEM_SMTP_HOST` | `smtp.exmail.qq.com` | 系统 SMTP 主机 |
-| `SYSTEM_SMTP_PORT` | `465` | 系统 SMTP 端口 |
-| `SYSTEM_SMTP_USE_SSL` | `true` | 是否使用 SMTP SSL |
-| `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许访问后端的前端地址 |
-| `CSRF_TRUSTED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 敏感请求允许的 Origin / Referer 来源 |
-| `COOKIE_SECURE` | `false` | 本地默认 `false`，HTTPS 生产必须 `true` |
-| `WORKER_POLL_INTERVAL_SECONDS` | `3` | Worker 轮询 SQLite 队列间隔 |
-| `DAILY_MANUAL_QUERY_LIMIT` | `20` | 非管理员账号每天可发起的 CEAC/GTS 手动查询次数，管理员不受限制 |
-| `SEED_DEFAULT_USERS` | `false` | 本地演示账号种子开关，公网必须保持 `false` |
-| `DEFAULT_ADMIN_EMAIL` | 空 | 本地种子管理员邮箱，仅 `SEED_DEFAULT_USERS=true` 时使用 |
-| `DEFAULT_ADMIN_PASSWORD` | 空 | 本地种子管理员密码，仅 `SEED_DEFAULT_USERS=true` 时使用 |
-| `DEFAULT_USER_EMAIL` | 空 | 本地种子普通用户邮箱，仅 `SEED_DEFAULT_USERS=true` 时使用 |
-| `DEFAULT_USER_PASSWORD` | 空 | 本地种子普通用户密码，仅 `SEED_DEFAULT_USERS=true` 时使用 |
-| `VITE_ICP_RECORD_NUMBER` | 空 | 前端底部展示的 ICP 备案号，例如 `沪ICP备2026015123号-1` |
+| `DATABASE_PATH` | `ceacstatusbot.sqlite3` | SQLite database path |
+| `SECRET_KEY` | Development default | Session signing secret. Must be changed for public deployments |
+| `CREDENTIAL_KEY_FILE` | Empty | AES-256-GCM master key file path. Production recommendation: `/opt/ceacstatusbot-runtime/secrets/credential-master.key` |
+| `ENCRYPTION_KEY` | Empty | Compatibility/migration key for old Fernet ciphertext. It is not used as the new credential master key |
+| `SYSTEM_FROM_EMAIL` | Empty | Default system sender email |
+| `SYSTEM_EMAIL_PASSWORD` | Empty | Default system sender password/app password. In production, prefer saving it through the admin console so it is stored encrypted |
+| `SYSTEM_SMTP_HOST` | `smtp.exmail.qq.com` | System SMTP host |
+| `SYSTEM_SMTP_PORT` | `465` | System SMTP port |
+| `SYSTEM_SMTP_USE_SSL` | `true` | Whether to use SMTP SSL |
+| `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Frontend origins allowed to access the backend |
+| `CSRF_TRUSTED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Trusted Origin / Referer values for sensitive requests |
+| `COOKIE_SECURE` | `false` | Defaults to `false` locally. Must be `true` behind HTTPS in production |
+| `WORKER_POLL_INTERVAL_SECONDS` | `3` | Worker polling interval for the SQLite job queue |
+| `DAILY_MANUAL_QUERY_LIMIT` | `20` | Daily CEAC/GTS manual query limit for non-admin accounts. Admin accounts are not limited |
+| `SEED_DEFAULT_USERS` | `false` | Local demo account seed switch. Must remain `false` in public deployments |
+| `DEFAULT_ADMIN_EMAIL` | Empty | Seed admin email, only used when `SEED_DEFAULT_USERS=true` |
+| `DEFAULT_ADMIN_PASSWORD` | Empty | Seed admin password, only used when `SEED_DEFAULT_USERS=true` |
+| `DEFAULT_USER_EMAIL` | Empty | Seed regular user email, only used when `SEED_DEFAULT_USERS=true` |
+| `DEFAULT_USER_PASSWORD` | Empty | Seed regular user password, only used when `SEED_DEFAULT_USERS=true` |
+| `VITE_ICP_RECORD_NUMBER` | Empty | ICP record number shown in the frontend footer, for example `沪ICP备2026015123号-1` |
 
-腾讯企业邮箱常用配置：
+Common Tencent Exmail settings:
 
-- SMTP：`smtp.exmail.qq.com`
-- SMTP SSL 端口：`465`
-- IMAP：`imap.exmail.qq.com`
-- IMAP SSL 端口：`993`
+- SMTP: `smtp.exmail.qq.com`
+- SMTP SSL port: `465`
+- IMAP: `imap.exmail.qq.com`
+- IMAP SSL port: `993`
 
-当前 Web 应用核心流程只需要 SMTP；IMAP 暂不参与状态查询或通知。
+The current web application only needs SMTP. IMAP is not used for status querying or notifications.
 
-## 查询与通知逻辑
+## Query And Notification Logic
 
-每个启用的签证档案都会保存 `nextCheckAt`。调度器每分钟扫描到期档案，并将自动查询任务写入 SQLite 队列。独立 Worker 消费队列、调用 CEAC 查询、记录查询日志、更新状态历史并发送邮件通知。
+Each enabled visa profile stores `nextCheckAt`. The scheduler scans due profiles every minute and writes automatic query jobs into the SQLite queue. The standalone Worker consumes the queue, calls CEAC, records query logs, updates status history, and sends email notifications.
 
-立即查询不会由 Web 进程直接执行爬虫，而是创建 `manual` 任务并返回任务 ID。前端轮询任务状态，完成后刷新档案信息和状态时间线。非管理员账号的 CEAC 立即查询和 GTS 立即查询 slot 共用每日手动查询额度，默认每天 20 次，可通过 `DAILY_MANUAL_QUERY_LIMIT` 调整；管理员账号不受限制。
+`Query now` does not run the scraper directly in the web process. It creates a `manual` job and returns a job ID. The frontend polls job status, then refreshes the profile and status timeline. For non-admin accounts, CEAC `Query now` and GTS `Check slots now` share the same daily manual query quota. The default is 20 per day and can be adjusted with `DAILY_MANUAL_QUERY_LIMIT`. Admin accounts are exempt.
 
-系统会比较最近一次历史记录中的状态和 CEAC 更新时间：
+The system compares the latest history item with the current CEAC result:
 
-- 完全一致：只记录查询日志，不发送通知。
-- 状态或 CEAC 更新时间变化：写入该档案的状态历史，并发送邮件。
+- Exact match: only records the query log; no notification is sent.
+- Status or CEAC last-updated changed: writes a new status history item and sends an email.
 
-如果某个档案关闭了“状态更新邮件推送”，系统仍会定时查询并记录时间线，但不会在状态变化时自动发邮件。用户仍可手动点击“测试发信”，按最新已有状态模板发送一封邮件。
+If a profile disables status update email notifications, the system still performs scheduled checks and records the timeline, but does not send automatic emails when the status changes. Users can still click `Test email` to send the latest existing status template manually.
 
-护照预约 slot 监控使用 GTS 官网同源 API：先用 UID/HAL 调用 `https://scheduling-api.gtspremium.com/authenticate` 获取 token，再调用 `/availability7days/` 查询 7 天可用时间。UID/HAL、GTS 原始返回和 slot 变化历史都会加密保存。系统保存规范化 slot 指纹；自动轮询由“启用自动监控”控制，slot 变化邮件由“状态更新时发送邮件推送”控制。只有首次发现可用时间或可用时间列表变化时才会写入变化历史；无 slot 或结果无变化只记录查询日志。GTS 查询任务同样由 Worker 消费，触发类型显示为 `passport_slot_manual` 或 `passport_slot_automatic`。
+Passport appointment slot monitoring uses the same-origin GTS API flow: authenticate with UID/HAL via `https://scheduling-api.gtspremium.com/authenticate`, then call `/availability7days/` to query 7-day availability. UID/HAL, raw GTS responses, and slot-change history are encrypted at rest. The system stores a normalized slot fingerprint. Automatic polling is controlled by `Enable automatic monitoring`; slot-change email delivery is controlled by `Send email when status changes`. A history row is written only when slots are first found or when the available time list changes. Empty or unchanged results only create query logs. GTS jobs are also consumed by the Worker and appear as `passport_slot_manual` or `passport_slot_automatic`.
 
-## 生产安全基线
+## Production Security Baseline
 
-- 登录密码使用 Argon2id；旧 PBKDF2-SHA256 哈希仅用于兼容迁移，用户登录成功后自动升级。
-- CEAC 档案敏感字段、GTS UID/HAL、SMTP 授权码和原始查询快照使用 AES-256-GCM 可逆加密。
-- 主密钥放在仓库外本地密钥文件，不写入代码、README、`backend.env` 或 GitHub。
-- 生产 Cookie 必须启用 `HttpOnly + SameSite=Lax + Secure`。
-- 所有敏感 API 请求校验 `Origin` / `Referer`，生产只信任 `https://ceac.mikezhuang.cn`。
-- CEAC 爬虫目标固定为 `https://ceac.state.gov`，GTS slot 查询目标固定为 `https://scheduling-api.gtspremium.com`，用户输入不能影响请求 Host 或 URL。
-- 生产入口只走 HTTPS 域名；8010 不作为公网入口。
-- Nginx 配置连接超时、请求限流、安全响应头，并只启用 TLS 1.2 / TLS 1.3。
+- Login passwords use Argon2id. Legacy PBKDF2-SHA256 hashes are kept only for migration compatibility and are upgraded after successful login.
+- CEAC profile sensitive fields, GTS UID/HAL, SMTP app passwords, and raw query snapshots are encrypted with AES-256-GCM.
+- The master key is stored in a local key file outside the repository. Do not write it into code, README files, `backend.env`, or GitHub.
+- Production cookies must use `HttpOnly + SameSite=Lax + Secure`.
+- All sensitive API requests validate `Origin` / `Referer`. Production should only trust `https://ceac.mikezhuang.cn`.
+- The CEAC scraper target is fixed to `https://ceac.state.gov`; the GTS slot query target is fixed to `https://scheduling-api.gtspremium.com`. User input cannot affect request hosts or URLs.
+- Production entry goes through the HTTPS domain only. Port 8010 is not a public entry point.
+- Nginx config sets connection timeouts, request rate limits, security headers, and only enables TLS 1.2 / TLS 1.3.
 
-更完整的安全模型见 [SECURITY.md](SECURITY.md)。
+For the complete security model, see [SECURITY.md](SECURITY.md).
 
-## 部署与运维
+## Deployment And Operations
 
-生产部署说明见 [DEPLOYMENT.md](DEPLOYMENT.md)，日常运维和故障处理见 [OPERATIONS.md](OPERATIONS.md)。
+Production deployment instructions are in [DEPLOYMENT.md](DEPLOYMENT.md). Daily operations and troubleshooting are in [OPERATIONS.md](OPERATIONS.md).
 
-核心约定：
+Core conventions:
 
-- 代码仓库：`/opt/ceacstatusbot`
-- 运行时数据：`/opt/ceacstatusbot-runtime`
-- 前端构建产物：`/var/www/ceacstatusbot/frontend/dist`
-- 后端服务：`ceacstatusbot-backend.service`
-- Worker 服务：`ceacstatusbot-worker.service`
-- 生产域名：`https://ceac.mikezhuang.cn`
-- 自动部署仓库：`https://github.com/Mike-Zhuang/CEACStatusBot_Web`
+- Code repository: `/opt/ceacstatusbot`
+- Runtime data: `/opt/ceacstatusbot-runtime`
+- Frontend build output: `/var/www/ceacstatusbot/frontend/dist`
+- Backend service: `ceacstatusbot-backend.service`
+- Worker service: `ceacstatusbot-worker.service`
+- Production domain: `https://ceac.mikezhuang.cn`
+- Auto-deploy repository: `https://github.com/Mike-Zhuang/CEACStatusBot_Web`
 
-部署时不要提交或覆盖 `.env`、`backend.env`、SQLite 数据库、主密钥文件、日志、备份、SMTP 授权码或服务器私钥。
+During deployment, do not commit or overwrite `.env`, `backend.env`, the SQLite database, master key files, logs, backups, SMTP app passwords, or server private keys.
 
 ## License
 
-本项目遵循 [GNU General Public License v3.0](LICENSE)。如果你分发修改版本，需要继续遵守 GPLv3 的源码开放、许可证保留和修改声明要求。
+This project follows the [GNU General Public License v3.0](LICENSE). If you distribute a modified version, you must continue to comply with GPLv3 requirements around source availability, license preservation, and modification notices.
 
-## 致谢
+## Acknowledgements
 
-感谢 [Andision/CEACStatusBot](https://github.com/Andision/CEACStatusBot)。本项目基于其 CEAC 自动查询方向与部分实现进行 Web 化、服务化和多用户改造。
+Thanks to [Andision/CEACStatusBot](https://github.com/Andision/CEACStatusBot). This project builds on its CEAC automatic query direction and parts of its implementation, then adapts them into a web-based, service-oriented, multi-user application.

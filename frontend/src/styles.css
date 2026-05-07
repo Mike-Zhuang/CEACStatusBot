@@ -1317,7 +1317,7 @@ select:focus {
   }
 
   .brand-name {
-    max-width: 86px;
+    max-width: none;
   }
 
   .language-toggle,
