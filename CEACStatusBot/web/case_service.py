@@ -387,7 +387,7 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                 )
                 if bool(case["email_notifications_enabled"]):
                     try:
-                        sendCaseNotification(case, smtpConfig, result)
+                        sendCaseNotification(case, smtpConfig, result, connection)
                     except Exception as exc:
                         errorMessage = f"Notification failed: {exc}"
             connection.execute(

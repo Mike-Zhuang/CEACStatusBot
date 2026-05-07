@@ -540,6 +540,8 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
             try:
                 sendPassportSlotNotification(
                     {
+                        "id": row["case_id"],
+                        "user_id": row["user_id"],
                         "display_name": row["display_name"],
                         "application_num": decryptIfNeeded(row["application_num"]) or row["application_num"],
                         "receive_email": decryptIfNeeded(row["receive_email"]) or row["receive_email"],
@@ -553,6 +555,7 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
                     statusMessage=statusMessage or formatSlotStatus(slotStatus),
                     slotLines=formatSlotLines(slots),
                     rawSummary="",
+                    connection=connection,
                 )
                 notificationSent = True
             except Exception as exc:
@@ -662,6 +665,8 @@ def sendCurrentPassportSlotEmail(caseId: int, userId: int | None = None) -> dict
     slotStatus = passportSlotStatusFromResult(result if isinstance(result, dict) else {}, row["last_slot_fingerprint"])
     statusMessage = str(result.get("statusMessage") or formatSlotStatus(slotStatus)) if isinstance(result, dict) else formatSlotStatus(slotStatus)
     case = {
+        "id": row["case_id"],
+        "user_id": row["user_id"],
         "display_name": row["display_name"],
         "application_num": decryptIfNeeded(row["application_num"]) or row["application_num"],
         "receive_email": decryptIfNeeded(row["receive_email"]) or row["receive_email"],

@@ -188,6 +188,21 @@ def initializeDatabase() -> None:
                 FOREIGN KEY (monitor_id) REFERENCES passport_slot_monitors(id) ON DELETE CASCADE,
                 FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS email_delivery_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                case_id INTEGER,
+                email_type TEXT NOT NULL DEFAULT 'case',
+                recipient TEXT NOT NULL DEFAULT '',
+                subject TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_email_delivery_logs_user_created
+            ON email_delivery_logs(user_id, created_at);
             """
         )
         columns = {

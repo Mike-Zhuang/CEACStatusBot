@@ -3,10 +3,15 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from smtplib import SMTP, SMTP_SSL
 from typing import Any
+from datetime import UTC, datetime, timedelta
 
 from .config import getSettings
 from .database import getConnection, utcNowIso
 from .secrets import decryptSecret, encryptSecret
+
+
+class DailyEmailLimitExceeded(RuntimeError):
+    pass
 
 
 def sendEmail(
@@ -54,6 +59,85 @@ def sendSystemEmail(toEmail: str, subject: str, body: str) -> None:
         subject=subject,
         body=body,
     )
+
+
+def enforceDailyEmailLimit(userId: int | None, connection: Any | None = None) -> None:
+    if userId is None:
+        return
+    settings = getSettings()
+    now = datetime.now(UTC)
+    todayStart = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrowStart = todayStart + timedelta(days=1)
+    if connection is not None:
+        user = connection.execute(
+            "SELECT role, account_tier FROM users WHERE id = ?",
+            (userId,),
+        ).fetchone()
+        if not user or user["role"] == "admin":
+            return
+        emailLimit = settings.premiumDailyEmailLimit if user["account_tier"] == "premium" else settings.standardDailyEmailLimit
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS email_count
+            FROM email_delivery_logs
+            WHERE user_id = ?
+              AND created_at >= ?
+              AND created_at < ?
+            """,
+            (userId, todayStart.isoformat(), tomorrowStart.isoformat()),
+        ).fetchone()
+    else:
+        with getConnection() as localConnection:
+            user = localConnection.execute(
+                "SELECT role, account_tier FROM users WHERE id = ?",
+                (userId,),
+            ).fetchone()
+            if not user or user["role"] == "admin":
+                return
+            emailLimit = settings.premiumDailyEmailLimit if user["account_tier"] == "premium" else settings.standardDailyEmailLimit
+            row = localConnection.execute(
+                """
+                SELECT COUNT(*) AS email_count
+                FROM email_delivery_logs
+                WHERE user_id = ?
+                  AND created_at >= ?
+                  AND created_at < ?
+                """,
+                (userId, todayStart.isoformat(), tomorrowStart.isoformat()),
+            ).fetchone()
+    emailCount = int(row["email_count"] if row else 0)
+    if emailCount >= emailLimit:
+        raise DailyEmailLimitExceeded(f"今日邮件发送数量已达上限（{emailLimit} 封），请明天再试。")
+
+
+def recordEmailDelivery(
+    *,
+    userId: int | None,
+    caseId: int | None,
+    emailType: str,
+    recipient: str,
+    subject: str,
+    connection: Any | None = None,
+) -> None:
+    if userId is None:
+        return
+    if connection is not None:
+        connection.execute(
+            """
+            INSERT INTO email_delivery_logs (user_id, case_id, email_type, recipient, subject, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (userId, caseId, emailType, recipient, subject, utcNowIso()),
+        )
+        return
+    with getConnection() as localConnection:
+        localConnection.execute(
+            """
+            INSERT INTO email_delivery_logs (user_id, case_id, email_type, recipient, subject, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (userId, caseId, emailType, recipient, subject, utcNowIso()),
+        )
 
 
 def getSystemSmtpConfig() -> dict[str, Any]:
@@ -124,7 +208,7 @@ def saveSystemSmtpConfig(*, fromEmail: str, host: str, port: int, useSsl: bool, 
     return getSystemSmtpConfigPublic()
 
 
-def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, result: dict[str, Any]) -> None:
+def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, result: dict[str, Any], connection: Any | None = None) -> None:
     subject = f"[CEAC] {case['application_num']} 状态更新：{result['status']}"
     lines = [
         f"档案：{case['display_name']}",
@@ -153,7 +237,7 @@ def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None
             ],
         )
     body = "\n".join(lines)
-    sendCaseEmail(case, smtpConfig, subject, body)
+    sendCaseEmail(case, smtpConfig, subject, body, emailType="ceac_status", connection=connection)
 
 
 def sendPassportSlotNotification(
@@ -167,6 +251,7 @@ def sendPassportSlotNotification(
     statusMessage: str,
     slotLines: list[str],
     rawSummary: str,
+    connection: Any | None = None,
 ) -> None:
     sendPassportSlotStatusEmail(
         case,
@@ -180,6 +265,7 @@ def sendPassportSlotNotification(
         rawSummary=rawSummary,
         hasSlots=slotStatus == "has_slot",
         isTest=False,
+        connection=connection,
     )
 
 
@@ -196,6 +282,7 @@ def sendPassportSlotStatusEmail(
     rawSummary: str,
     hasSlots: bool,
     isTest: bool = False,
+    connection: Any | None = None,
 ) -> None:
     subject = f"[GTS] 发现可预约时间：{case['display_name']}"
     if slotStatus == "no_slot":
@@ -240,10 +327,10 @@ def sendPassportSlotStatusEmail(
             "安全提醒：本邮件包含完整 UID/HAL，请勿转发或公开截图。",
         ],
     )
-    sendCaseEmail(case, smtpConfig, subject, "\n".join(lines))
+    sendCaseEmail(case, smtpConfig, subject, "\n".join(lines), emailType="passport_slot", connection=connection)
 
 
-def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, issuedAt: str) -> None:
+def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, issuedAt: str, connection: Any | None = None) -> None:
     subject = f"[CEAC] {case['application_num']} 已自动停止查询"
     body = "\n".join(
         [
@@ -257,10 +344,21 @@ def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, A
             "你仍然可以登录网站，在档案详情页手动执行立即查询。",
         ],
     )
-    sendCaseEmail(case, smtpConfig, subject, body)
+    sendCaseEmail(case, smtpConfig, subject, body, emailType="issued_auto_stop", connection=connection)
 
 
-def sendCaseEmail(case: dict[str, Any], smtpConfig: dict[str, Any] | None, subject: str, body: str) -> None:
+def sendCaseEmail(
+    case: dict[str, Any],
+    smtpConfig: dict[str, Any] | None,
+    subject: str,
+    body: str,
+    *,
+    emailType: str = "case",
+    connection: Any | None = None,
+) -> None:
+    userId = int(case["user_id"]) if case.get("user_id") is not None else None
+    caseId = int(case["id"]) if case.get("id") is not None else None
+    enforceDailyEmailLimit(userId, connection)
     if case["sender_mode"] == "custom" and smtpConfig:
         sendEmail(
             fromEmail=smtpConfig["from_email"],
@@ -272,5 +370,7 @@ def sendCaseEmail(case: dict[str, Any], smtpConfig: dict[str, Any] | None, subje
             subject=subject,
             body=body,
         )
+        recordEmailDelivery(userId=userId, caseId=caseId, emailType=emailType, recipient=case["receive_email"], subject=subject, connection=connection)
         return
     sendSystemEmail(case["receive_email"], subject, body)
+    recordEmailDelivery(userId=userId, caseId=caseId, emailType=emailType, recipient=case["receive_email"], subject=subject, connection=connection)

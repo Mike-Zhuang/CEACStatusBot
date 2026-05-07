@@ -221,7 +221,7 @@ const translations = {
     accountTierStandard: "Standard",
     accountTierPremium: "Premium",
     accountTierSaved: "Account tier saved.",
-    accountTierLimits: "Standard: 1 profile and 1 manual query/day. Premium: 5 profiles and high manual-query quota.",
+    accountTierLimits: "Standard: 1 profile, 1 manual query/day, and limited daily emails. Premium: 5 profiles with high query and email quotas.",
     accountTierCurrent: "Current tier",
     appSubtitle: "Visa status monitoring, query history, and email delivery.",
     applicationId: "Application ID or Case Number",
@@ -389,7 +389,7 @@ const translations = {
     accountTierStandard: "普通账号",
     accountTierPremium: "Premium 账号",
     accountTierSaved: "账号等级已保存。",
-    accountTierLimits: "普通账号：1 个档案、每天 1 次手动刷新；Premium：5 个档案、手动刷新额度很高。",
+    accountTierLimits: "普通账号：1 个档案、每天 1 次手动刷新，并限制每日邮件数量；Premium：5 个档案，查询和邮件额度都更高。",
     accountTierCurrent: "当前账号等级",
     appSubtitle: "签证状态监控、查询历史与邮件提醒。",
     applicationId: "Application ID 或 Case Number",
@@ -1554,8 +1554,8 @@ function SupportPanel(props: { t: (key: TranslationKey) => string; compact?: boo
         <p>{props.t("supportBody")}</p>
         <p>{props.t("supportPremium")}</p>
         <p className="support-disclaimer">{props.t("supportDisclaimer")}</p>
+        <img src="/support/buy-me-a-coffee.jpg" alt={props.t("supportTitle")} />
       </div>
-      <img src="/support/buy-me-a-coffee.jpg" alt={props.t("supportTitle")} />
     </section>
   );
 }
@@ -1891,6 +1891,7 @@ function AdminPanel(props: {
 }) {
   const form = props.systemEmailForm;
   const [priorityDrafts, setPriorityDrafts] = useState<Record<number, string>>({});
+  const [collapsedAdminUsers, setCollapsedAdminUsers] = useState<Record<number, boolean>>({});
   const [collapsedLogUsers, setCollapsedLogUsers] = useState<Record<string, boolean>>({});
   const casesByUserId = useMemo(() => {
     const grouped = new Map<number, CeacCase[]>();
@@ -1909,6 +1910,9 @@ function AdminPanel(props: {
   }, [props.queryRuns, props.t]);
   const toggleLogUser = (email: string) => {
     setCollapsedLogUsers((current) => ({ ...current, [email]: !current[email] }));
+  };
+  const toggleAdminUser = (userId: number) => {
+    setCollapsedAdminUsers((current) => ({ ...current, [userId]: !(current[userId] ?? true) }));
   };
   return (
     <div className="stack">
@@ -1986,74 +1990,87 @@ function AdminPanel(props: {
         <div className="admin-user-list">
           {props.users.map((adminUser) => {
             const ownedCases = casesByUserId.get(adminUser.id) ?? [];
+            const isCollapsed = collapsedAdminUsers[adminUser.id] ?? true;
             return (
-              <div key={adminUser.id} className="admin-user-card">
-                <div className="admin-user-header">
-                  <div>
-                    <div className="case-name">{adminUser.email}</div>
-                    <div className="case-meta">
-                      {adminUser.role} · {formatAccountTier(adminUser.account_tier, props.t)} · {adminUser.is_email_verified ? props.t("verified") : props.t("notVerified")}
-                    </div>
-                  </div>
-                  <span className="status-badge">{adminUser.case_count} {props.t("casesOwned")}</span>
-                </div>
-                <div className="admin-controls-row">
-                  <label>
-                    {props.t("accountTier")}
-                    <select
-                      value={adminUser.account_tier}
-                      onChange={(event) => props.updateAccountTier(adminUser.id, event.target.value as AccountTier)}
-                      disabled={props.isBusy}
-                    >
-                      <option value="standard">{props.t("accountTierStandard")}</option>
-                      <option value="premium">{props.t("accountTierPremium")}</option>
-                    </select>
-                  </label>
-                  <label>
-                    {props.t("workerPriority")}
-                    <input
-                      type="number"
-                      min={1}
-                      max={999}
-                      value={priorityDrafts[adminUser.id] ?? String(adminUser.worker_priority)}
-                      onChange={(event) => setPriorityDrafts({ ...priorityDrafts, [adminUser.id]: event.target.value })}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="button secondary"
-                    disabled={props.isBusy}
-                    onClick={() => props.updateWorkerPriority(adminUser.id, Number(priorityDrafts[adminUser.id] ?? adminUser.worker_priority))}
-                  >
-                    {props.t("saveWorkerPriority")}
-                  </button>
-                </div>
-                <p className="form-intro compact">{props.t("workerPriorityHint")}</p>
-                <div className="admin-user-metrics">
-                  <Metric label={props.t("lastQuery")} value={formatTime(adminUser.last_checked_at, props.languageMode)} />
-                  <Metric label={props.t("createdAt")} value={formatTime(adminUser.created_at, props.languageMode)} />
-                  <Metric label={props.t("updatedAt")} value={formatTime(adminUser.updated_at, props.languageMode)} />
-                </div>
-                <div className="case-list compact">
-                  {ownedCases.map((item) => (
-                    <div key={item.id} className="admin-case-row">
-                      <span>{item.displayName}</span>
-                      <span className="mono-text">{item.applicationNum}</span>
-                      <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? props.t("waitFirstQuery")}</span>
-                      {item.ceacAutoLockedByPassportSlot && (
-                        <button
-                          type="button"
-                          className="button secondary compact-button"
+              <div key={adminUser.id} className={`admin-user-card ${isCollapsed ? "collapsed" : ""}`}>
+                <button type="button" className="admin-user-header" onClick={() => toggleAdminUser(adminUser.id)}>
+                  <span className="admin-user-title">
+                    {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                    <span>
+                      <span className="case-name">{adminUser.email}</span>
+                      <span className="case-meta">
+                        {adminUser.role} · {formatAccountTier(adminUser.account_tier, props.t)} · {adminUser.is_email_verified ? props.t("verified") : props.t("notVerified")} · {props.t("workerPriority")} {adminUser.worker_priority}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="admin-user-summary">
+                    <span className={`status-badge ${adminUser.account_tier === "premium" ? "success" : ""}`}>
+                      {formatAccountTier(adminUser.account_tier, props.t)}
+                    </span>
+                    <span className="status-badge">{adminUser.case_count} {props.t("casesOwned")}</span>
+                  </span>
+                </button>
+                {!isCollapsed && (
+                  <>
+                    <div className="admin-controls-row">
+                      <label>
+                        {props.t("accountTier")}
+                        <select
+                          value={adminUser.account_tier}
+                          onChange={(event) => props.updateAccountTier(adminUser.id, event.target.value as AccountTier)}
                           disabled={props.isBusy}
-                          onClick={() => props.restoreCeacAutoQuery(item.id)}
                         >
-                          {props.t("restoreCeacAutoQuery")}
-                        </button>
-                      )}
+                          <option value="standard">{props.t("accountTierStandard")}</option>
+                          <option value="premium">{props.t("accountTierPremium")}</option>
+                        </select>
+                      </label>
+                      <label>
+                        {props.t("workerPriority")}
+                        <input
+                          type="number"
+                          min={1}
+                          max={999}
+                          value={priorityDrafts[adminUser.id] ?? String(adminUser.worker_priority)}
+                          onChange={(event) => setPriorityDrafts({ ...priorityDrafts, [adminUser.id]: event.target.value })}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        disabled={props.isBusy}
+                        onClick={() => props.updateWorkerPriority(adminUser.id, Number(priorityDrafts[adminUser.id] ?? adminUser.worker_priority))}
+                      >
+                        {props.t("saveWorkerPriority")}
+                      </button>
                     </div>
-                  ))}
-                  {ownedCases.length === 0 && <p className="empty-state compact">{props.t("noCases")}</p>}
-                </div>
+                    <p className="form-intro compact">{props.t("workerPriorityHint")}</p>
+                    <div className="admin-user-metrics">
+                      <Metric label={props.t("lastQuery")} value={formatTime(adminUser.last_checked_at, props.languageMode)} />
+                      <Metric label={props.t("createdAt")} value={formatTime(adminUser.created_at, props.languageMode)} />
+                      <Metric label={props.t("updatedAt")} value={formatTime(adminUser.updated_at, props.languageMode)} />
+                    </div>
+                    <div className="case-list compact">
+                      {ownedCases.map((item) => (
+                        <div key={item.id} className="admin-case-row">
+                          <span>{item.displayName}</span>
+                          <span className="mono-text">{item.applicationNum}</span>
+                          <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? props.t("waitFirstQuery")}</span>
+                          {item.ceacAutoLockedByPassportSlot && (
+                            <button
+                              type="button"
+                              className="button secondary compact-button"
+                              disabled={props.isBusy}
+                              onClick={() => props.restoreCeacAutoQuery(item.id)}
+                            >
+                              {props.t("restoreCeacAutoQuery")}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {ownedCases.length === 0 && <p className="empty-state compact">{props.t("noCases")}</p>}
+                    </div>
+                  </>
+                )}
               </div>
             );
           })}

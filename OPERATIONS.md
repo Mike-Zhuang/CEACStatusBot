@@ -99,12 +99,20 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
 
 如果 `queued` 或 `running` 长时间积压，先检查 Worker 服务和日志。
 
-CEAC 立即查询和 GTS 立即查询 slot 共用每日手动查询额度：普通账号默认由 `STANDARD_DAILY_MANUAL_QUERY_LIMIT=1` 控制，Premium 默认由 `PREMIUM_DAILY_MANUAL_QUERY_LIMIT=1000` 控制，管理员账号不受限制。查看当天手动查询量：
+CEAC 立即查询和 GTS 立即查询 slot 共用每日手动查询额度：普通账号默认由 `STANDARD_DAILY_MANUAL_QUERY_LIMIT=1` 控制，Premium 默认由 `PREMIUM_DAILY_MANUAL_QUERY_LIMIT=1000` 控制，管理员账号不受限制。CEAC/GTS 业务邮件也有每日账号级限制：普通账号默认由 `STANDARD_DAILY_EMAIL_LIMIT=5` 控制，Premium 默认由 `PREMIUM_DAILY_EMAIL_LIMIT=1000` 控制，注册和重置密码验证码不计入。查看当天手动查询量：
 
 ```bash
 sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
   ".headers on" ".mode column" \
   "select u.email, count(*) as manual_queries from query_jobs j join ceac_cases c on c.id = j.case_id join users u on u.id = c.user_id where j.trigger_type in ('manual', 'passport_slot_manual') and j.created_at >= datetime('now', 'start of day') group by u.id order by manual_queries desc;"
+```
+
+查看当天业务邮件发送量：
+
+```bash
+sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
+  ".headers on" ".mode column" \
+  "select u.email, count(*) as sent_emails from email_delivery_logs e join users u on u.id = e.user_id where e.created_at >= datetime('now', 'start of day') group by u.id order by sent_emails desc;"
 ```
 
 GTS 护照预约监控任务会使用 `passport_slot_manual` 或 `passport_slot_automatic` 触发类型：

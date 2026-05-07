@@ -55,6 +55,8 @@ COOKIE_SECURE=true
 WORKER_POLL_INTERVAL_SECONDS=1
 STANDARD_DAILY_MANUAL_QUERY_LIMIT=1
 PREMIUM_DAILY_MANUAL_QUERY_LIMIT=1000
+STANDARD_DAILY_EMAIL_LIMIT=5
+PREMIUM_DAILY_EMAIL_LIMIT=1000
 SEED_DEFAULT_USERS=false
 ```
 
@@ -185,4 +187,5 @@ nginx -t
 - 管理员后台可加载用户资料、查询日志和系统发信配置。
 - 管理员后台可编辑用户账号等级和 Worker 优先级；队列按优先级数值从小到大领取任务，同优先级按任务 ID 先进先出。Premium 默认优先级 50，普通账号默认 100。
 - 立即查询会进入队列并由 Worker 完成；普通账号达到 `STANDARD_DAILY_MANUAL_QUERY_LIMIT`、Premium 达到 `PREMIUM_DAILY_MANUAL_QUERY_LIMIT` 后会收到 429 提示。
+- CEAC/GTS 业务邮件同样有每日账号级限制：普通账号由 `STANDARD_DAILY_EMAIL_LIMIT` 控制，Premium 由 `PREMIUM_DAILY_EMAIL_LIMIT` 控制；注册和重置密码验证码不计入该额度。
 - Approved/Issued 档案详情页可保存 UID/HAL 并创建 GTS 护照预约监控；Worker 日志中可看到 `passport_slot_manual` 或 `passport_slot_automatic` 任务。GTS 进入 `no_slot` / `has_slot` 后应自动停止并锁定 CEAC 自动查询；发现 slot 后 GTS 下次查询应约为 1 小时后。

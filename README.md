@@ -17,7 +17,7 @@ This project is a modified version released under the GPLv3 license. It preserve
 - FastAPI backend, SQLite database, APScheduler queue scheduler, and a standalone Worker for query jobs.
 - React + Vite + TypeScript frontend console with dark/light themes and Chinese/English language switching.
 - Open registration with email verification for both signup and password reset.
-- Standard accounts can create 1 CEAC profile and run 1 manual query per day. Premium accounts can create 5 profiles and use a high manual-query quota. Admins are exempt.
+- Standard accounts can create 1 CEAC profile, run 1 manual query per day, and use a limited daily email quota. Premium accounts can create 5 profiles and use high query/email quotas. Admins are exempt.
 - Enabled profiles are queued once per hour at a random minute. After a profile enters `Issued`, automatic CEAC checks slow down to once per day and stop automatically after one week.
 - When a CEAC profile enters `Approved` or `Issued`, status emails invite the user to enter UID/HAL and enable GTS passport appointment slot monitoring.
 - GTS passport appointment monitoring is bound to a CEAC profile. It polls at a random 5-10 minute interval by default, with separate switches for automatic polling and slot-change email notifications. Once slots are found, polling slows to roughly once per hour until the user confirms they have booked and stops monitoring.
@@ -90,6 +90,8 @@ Open `http://127.0.0.1:5173`. VS Code debug configuration lives in `.vscode/laun
 | `WORKER_POLL_INTERVAL_SECONDS` | `1` | Worker polling interval for the SQLite job queue. GTS midnight burst jobs need second-level pickup |
 | `STANDARD_DAILY_MANUAL_QUERY_LIMIT` | `1` | Daily CEAC/GTS manual query limit for standard accounts |
 | `PREMIUM_DAILY_MANUAL_QUERY_LIMIT` | `1000` | Daily CEAC/GTS manual query limit for Premium accounts |
+| `STANDARD_DAILY_EMAIL_LIMIT` | `5` | Daily CEAC/GTS business email limit for standard accounts. Signup and password-reset codes are not counted |
+| `PREMIUM_DAILY_EMAIL_LIMIT` | `1000` | Daily CEAC/GTS business email limit for Premium accounts |
 | `SEED_DEFAULT_USERS` | `false` | Local demo account seed switch. Must remain `false` in public deployments |
 | `DEFAULT_ADMIN_EMAIL` | Empty | Seed admin email, only used when `SEED_DEFAULT_USERS=true` |
 | `DEFAULT_ADMIN_PASSWORD` | Empty | Seed admin password, only used when `SEED_DEFAULT_USERS=true` |
@@ -110,7 +112,7 @@ The current web application only needs SMTP. IMAP is not used for status queryin
 
 Each enabled visa profile stores `nextCheckAt`. The scheduler scans due profiles every minute and writes automatic query jobs into the SQLite queue. The standalone Worker consumes the queue, calls CEAC, records query logs, updates status history, and sends email notifications.
 
-`Query now` does not run the scraper directly in the web process. It creates a `manual` job and returns a job ID. The frontend polls job status, then refreshes the profile and status timeline. CEAC `Query now` and GTS `Check slots now` share the same daily manual query quota: Standard accounts default to 1 per day, Premium accounts default to 1000 per day, and admin accounts are exempt. Worker priority uses smaller numbers first; Premium defaults to 50 and Standard defaults to 100, while admins can override either value.
+`Query now` does not run the scraper directly in the web process. It creates a `manual` job and returns a job ID. The frontend polls job status, then refreshes the profile and status timeline. CEAC `Query now` and GTS `Check slots now` share the same daily manual query quota: Standard accounts default to 1 per day, Premium accounts default to 1000 per day, and admin accounts are exempt. CEAC/GTS business emails also have daily account-level quotas: Standard defaults to 5 per day and Premium defaults to 1000 per day. Worker priority uses smaller numbers first; Premium defaults to 50 and Standard defaults to 100, while admins can override either value.
 
 The system compares the latest history item with the current CEAC result:
 
