@@ -20,6 +20,7 @@ from .case_service import (
     patchCase,
     restoreCaseAutomaticQuery,
     sendCurrentStatusEmail,
+    updateUserAccountTier,
     updateUserWorkerPriority,
 )
 from .config import getSettings
@@ -35,6 +36,7 @@ from .passport_slot_service import (
     upsertPassportSlotMonitor,
 )
 from .schemas import (
+    AccountTierPatch,
     CeacCaseInput,
     CeacCasePatch,
     LoginRequest,
@@ -118,6 +120,7 @@ def listCasesForQueryRuns(rows: list[dict]) -> list[dict]:
 def enforceDailyManualQueryLimit(user: dict) -> None:
     if user.get("role") == "admin":
         return
+    queryLimit = settings.premiumDailyManualQueryLimit if user.get("account_tier") == "premium" else settings.standardDailyManualQueryLimit
     now = datetime.now(UTC)
     todayStart = now.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrowStart = todayStart + timedelta(days=1)
@@ -139,10 +142,10 @@ def enforceDailyManualQueryLimit(user: dict) -> None:
             ),
         ).fetchone()
     queryCount = int(row["query_count"] if row else 0)
-    if queryCount >= settings.dailyManualQueryLimit:
+    if queryCount >= queryLimit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"今日立即查询次数已达上限（{settings.dailyManualQueryLimit} 次），请明天再试。",
+            detail=f"今日立即查询次数已达上限（{queryLimit} 次），请明天再试。",
         )
 
 
@@ -288,14 +291,14 @@ def register(payload: RegisterRequest, response: Response) -> dict:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码已过期")
         cursor = connection.execute(
             """
-            INSERT INTO users (email, password_hash, role, is_email_verified, created_at, updated_at)
-            VALUES (?, ?, 'user', 1, ?, ?)
+            INSERT INTO users (email, password_hash, role, account_tier, is_email_verified, created_at, updated_at)
+            VALUES (?, ?, 'user', 'standard', 1, ?, ?)
             """,
             (payload.email, hashPassword(payload.password), nowIso, nowIso),
         )
         connection.execute("UPDATE email_verification_codes SET used_at = ? WHERE id = ?", (nowIso, codeRow["id"]))
         user = connection.execute(
-            "SELECT id, email, role, is_email_verified, created_at FROM users WHERE id = ?",
+            "SELECT id, email, role, account_tier, is_email_verified, created_at FROM users WHERE id = ?",
             (cursor.lastrowid,),
         ).fetchone()
     setSessionCookie(response, user)
@@ -318,6 +321,7 @@ def login(payload: LoginRequest, response: Response) -> dict:
         "id": user["id"],
         "email": user["email"],
         "role": user["role"],
+        "account_tier": user["account_tier"],
         "is_email_verified": user["is_email_verified"],
         "created_at": user["created_at"],
     }
@@ -362,7 +366,7 @@ def updateMe(payload: ProfileUpdateRequest, response: Response, user: dict = Dep
             (nextEmail, nextPasswordHash, nowIso, user["id"]),
         )
         publicUser = connection.execute(
-            "SELECT id, email, role, is_email_verified, created_at FROM users WHERE id = ?",
+            "SELECT id, email, role, account_tier, is_email_verified, created_at FROM users WHERE id = ?",
             (user["id"],),
         ).fetchone()
     setSessionCookie(response, publicUser)
@@ -376,7 +380,10 @@ def apiListCases(user: dict = Depends(currentUserDependency)) -> dict:
 
 @app.post("/api/cases")
 def apiCreateCase(payload: CeacCaseInput, user: dict = Depends(currentUserDependency)) -> dict:
-    return {"case": createCase(int(user["id"]), payload)}
+    try:
+        return {"case": createCase(int(user["id"]), payload)}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @app.patch("/api/cases/{caseId}")
@@ -497,6 +504,7 @@ def adminUsers(_: dict = Depends(adminDependency)) -> dict:
                 u.id,
                 u.email,
                 u.role,
+                u.account_tier,
                 u.worker_priority,
                 u.is_email_verified,
                 u.created_at,
@@ -515,6 +523,14 @@ def adminUsers(_: dict = Depends(adminDependency)) -> dict:
 @app.patch("/api/admin/users/{userId}/worker-priority")
 def adminPatchUserWorkerPriority(userId: int, payload: WorkerPriorityPatch, _: dict = Depends(adminDependency)) -> dict:
     user = updateUserWorkerPriority(userId, payload.workerPriority)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    return {"user": user}
+
+
+@app.patch("/api/admin/users/{userId}/account-tier")
+def adminPatchUserAccountTier(userId: int, payload: AccountTierPatch, _: dict = Depends(adminDependency)) -> dict:
+    user = updateUserAccountTier(userId, payload.accountTier)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
     return {"user": user}

@@ -99,7 +99,7 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
 
 如果 `queued` 或 `running` 长时间积压，先检查 Worker 服务和日志。
 
-非管理员账号的 CEAC 立即查询和 GTS 立即查询 slot 共用每日手动查询额度，默认由 `DAILY_MANUAL_QUERY_LIMIT=20` 控制；管理员账号不受限制。查看当天手动查询量：
+CEAC 立即查询和 GTS 立即查询 slot 共用每日手动查询额度：普通账号默认由 `STANDARD_DAILY_MANUAL_QUERY_LIMIT=1` 控制，Premium 默认由 `PREMIUM_DAILY_MANUAL_QUERY_LIMIT=1000` 控制，管理员账号不受限制。查看当天手动查询量：
 
 ```bash
 sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
@@ -123,12 +123,12 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
   "select id, display_name, is_enabled, ceac_auto_locked_by_passport_slot, next_check_at from ceac_cases where ceac_auto_locked_by_passport_slot = 1 order by updated_at desc;"
 ```
 
-Worker 领取队列时会按账号优先级排序，数值越小越先处理；优先级相同则保持任务 ID FIFO：
+Worker 领取队列时会按账号优先级排序，数值越小越先处理；Premium 默认 50，普通账号默认 100，管理员可手动覆盖；优先级相同则保持任务 ID FIFO：
 
 ```bash
 sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
   ".headers on" ".mode column" \
-  "select id, email, role, worker_priority from users order by worker_priority asc, id asc;"
+  "select id, email, role, account_tier, worker_priority from users order by worker_priority asc, id asc;"
 ```
 
 ## 备份

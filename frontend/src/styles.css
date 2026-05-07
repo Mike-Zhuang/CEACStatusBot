@@ -450,6 +450,10 @@ select:focus {
 .site-footer {
   margin-top: auto;
   padding: 20px 24px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
   text-align: center;
   color: var(--ink-tertiary);
   font-size: 12px;
@@ -471,6 +475,75 @@ select:focus {
 .site-footer a:hover {
   color: var(--ink-subtle);
   text-decoration: underline;
+}
+
+.support-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.auth-shell .support-card {
+  width: min(420px, calc(100vw - 48px));
+  margin-top: 16px;
+}
+
+.support-card.compact {
+  padding: 12px;
+}
+
+.support-card img {
+  width: 116px;
+  height: 116px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+}
+
+.support-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.support-copy p {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.support-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.support-disclaimer {
+  color: var(--ink-tertiary) !important;
+  font-size: 11px !important;
+}
+
+.account-tier-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-2);
+  margin-bottom: 16px;
+}
+
+.form-intro.compact {
+  margin: 0;
+  font-size: 12px;
 }
 
 .top-nav {
@@ -904,14 +977,14 @@ select:focus {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.admin-priority-row {
+.admin-controls-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: end;
 }
 
-.admin-priority-row input {
+.admin-controls-row input {
   max-width: 160px;
 }
 
@@ -945,6 +1018,58 @@ select:focus {
   border: 1px solid var(--hairline);
   border-radius: 8px;
   background: var(--canvas);
+}
+
+.log-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.log-group {
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+}
+
+.log-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.log-group-header:hover {
+  background: var(--surface);
+}
+
+.log-group.collapsed .log-group-header {
+  border-bottom: 0;
+}
+
+.log-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.log-group .log-table-wrap {
+  border: 0;
+  border-radius: 0;
 }
 
 .log-table {
@@ -1010,7 +1135,7 @@ select:focus {
 @media (max-width: 760px) {
   .admin-user-header,
   .admin-user-metrics,
-  .admin-priority-row,
+  .admin-controls-row,
   .admin-case-row {
     grid-template-columns: 1fr;
   }
@@ -1133,6 +1258,15 @@ select:focus {
   .auth-shell .site-footer {
     position: static;
     margin-top: 32px;
+  }
+
+  .support-card {
+    grid-template-columns: 1fr;
+  }
+
+  .support-card img {
+    width: 104px;
+    height: 104px;
   }
 
   .workspace {

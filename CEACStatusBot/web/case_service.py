@@ -17,6 +17,10 @@ from .secrets import decryptIfNeeded, encryptSecret, isEncryptedSecret
 
 
 SENSITIVE_CASE_COLUMNS = {"application_num", "passport_number", "surname", "receive_email"}
+STANDARD_CASE_LIMIT = 1
+PREMIUM_CASE_LIMIT = 5
+STANDARD_WORKER_PRIORITY = 100
+PREMIUM_WORKER_PRIORITY = 50
 
 
 def isIssuedStatus(status: str | None) -> bool:
@@ -142,6 +146,15 @@ def upsertSmtpConfig(connection: Any, userId: int, smtpConfig: Any) -> None:
 def createCase(userId: int, payload: CeacCaseInput) -> dict[str, Any]:
     now = utcNowIso()
     with getConnection() as connection:
+        user = connection.execute("SELECT role, account_tier FROM users WHERE id = ?", (userId,)).fetchone()
+        if not user:
+            raise ValueError("用户不存在")
+        if user.get("role") != "admin":
+            caseCountRow = connection.execute("SELECT COUNT(*) AS case_count FROM ceac_cases WHERE user_id = ?", (userId,)).fetchone()
+            caseCount = int(caseCountRow["case_count"] if caseCountRow else 0)
+            caseLimit = PREMIUM_CASE_LIMIT if user.get("account_tier") == "premium" else STANDARD_CASE_LIMIT
+            if caseCount >= caseLimit:
+                raise ValueError(f"当前账号最多可添加 {caseLimit} 个档案，请联系管理员升级账号。")
         upsertSmtpConfig(connection, userId, payload.smtpConfig)
         cursor = connection.execute(
             """
@@ -265,7 +278,23 @@ def updateUserWorkerPriority(userId: int, workerPriority: int) -> dict[str, Any]
         if cursor.rowcount == 0:
             return None
         return connection.execute(
-            "SELECT id, email, role, worker_priority, is_email_verified, created_at, updated_at FROM users WHERE id = ?",
+            "SELECT id, email, role, account_tier, worker_priority, is_email_verified, created_at, updated_at FROM users WHERE id = ?",
+            (userId,),
+        ).fetchone()
+
+
+def updateUserAccountTier(userId: int, accountTier: str) -> dict[str, Any] | None:
+    now = utcNowIso()
+    workerPriority = PREMIUM_WORKER_PRIORITY if accountTier == "premium" else STANDARD_WORKER_PRIORITY
+    with getConnection() as connection:
+        cursor = connection.execute(
+            "UPDATE users SET account_tier = ?, worker_priority = ?, updated_at = ? WHERE id = ?",
+            (accountTier, workerPriority, now, userId),
+        )
+        if cursor.rowcount == 0:
+            return None
+        return connection.execute(
+            "SELECT id, email, role, account_tier, worker_priority, is_email_verified, created_at, updated_at FROM users WHERE id = ?",
             (userId,),
         ).fetchone()
 

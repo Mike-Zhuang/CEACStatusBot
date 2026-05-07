@@ -87,3 +87,7 @@ class PassportSlotMonitorPatch(BaseModel):
 
 class WorkerPriorityPatch(BaseModel):
     workerPriority: int = Field(ge=1, le=999)
+
+
+class AccountTierPatch(BaseModel):
+    accountTier: str = Field(pattern="^(standard|premium)$")

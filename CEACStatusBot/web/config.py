@@ -42,7 +42,8 @@ class Settings:
             if origin.strip()
         ]
         self.workerPollIntervalSeconds = max(1, int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "1")))
-        self.dailyManualQueryLimit = max(1, int(os.getenv("DAILY_MANUAL_QUERY_LIMIT", "20")))
+        self.standardDailyManualQueryLimit = max(1, int(os.getenv("STANDARD_DAILY_MANUAL_QUERY_LIMIT", "1")))
+        self.premiumDailyManualQueryLimit = max(1, int(os.getenv("PREMIUM_DAILY_MANUAL_QUERY_LIMIT", "1000")))
 
     def getFernet(self) -> Fernet:
         key = self.encryptionKey

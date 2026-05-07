@@ -116,7 +116,7 @@ def getCurrentUser(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效")
     with getConnection() as connection:
         user = connection.execute(
-            "SELECT id, email, role, is_email_verified, created_at FROM users WHERE id = ?",
+            "SELECT id, email, role, account_tier, is_email_verified, created_at FROM users WHERE id = ?",
             (payload["userId"],),
         ).fetchone()
     if not user:
@@ -146,8 +146,8 @@ def seedDefaultUsers() -> None:
                 continue
             connection.execute(
                 """
-                INSERT INTO users (email, password_hash, role, is_email_verified, created_at, updated_at)
-                VALUES (?, ?, ?, 1, ?, ?)
+                INSERT INTO users (email, password_hash, role, account_tier, is_email_verified, created_at, updated_at)
+                VALUES (?, ?, ?, 'standard', 1, ?, ?)
                 """,
                 (email, hashPassword(password), role, now, now),
             )

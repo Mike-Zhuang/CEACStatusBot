@@ -2,6 +2,9 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  HeartHandshake,
   Mail,
   History,
   LogOut,
@@ -18,11 +21,14 @@ type ThemeMode = "dark" | "light";
 type LanguageMode = "zh" | "en";
 type ViewMode = "dashboard" | "profile" | "admin";
 type AuthMode = "login" | "register" | "forgot";
+type AccountTier = "standard" | "premium";
+type MessageScope = ViewMode | "auth";
 
 interface User {
   id: number;
   email: string;
   role: "admin" | "user";
+  account_tier: AccountTier;
   is_email_verified: number;
   created_at: string;
 }
@@ -136,6 +142,7 @@ interface AdminUser {
   id: number;
   email: string;
   role: "admin" | "user";
+  account_tier: AccountTier;
   worker_priority: number;
   is_email_verified: number;
   created_at: string;
@@ -210,6 +217,12 @@ const translations = {
     admin: "Admin",
     adminTitle: "Admin Console",
     adminUsers: "Users",
+    accountTier: "Account tier",
+    accountTierStandard: "Standard",
+    accountTierPremium: "Premium",
+    accountTierSaved: "Account tier saved.",
+    accountTierLimits: "Standard: 1 profile and 1 manual query/day. Premium: 5 profiles and high manual-query quota.",
+    accountTierCurrent: "Current tier",
     appSubtitle: "Visa status monitoring, query history, and email delivery.",
     applicationId: "Application ID or Case Number",
     autoMonitor: "Enable automatic monitoring",
@@ -246,6 +259,7 @@ const translations = {
     keepPasswordPlaceholder: "Leave blank to keep current password",
     login: "Sign in",
     loginAction: "Sign in",
+    logItems: "logs",
     logoutTitle: "Sign out",
     missingCaseNumber: "No case number",
     noCases: "No profiles yet",
@@ -323,6 +337,7 @@ const translations = {
     passportSlotMonitor: "Passport appointment monitor",
     passportSlotIntro: "Enter your UID or HAL after Approved or Issued to watch GTS appointment slots.",
     passportSlotEarlyHint: "You can configure this now, but GTS usually returns valid tokens after Approved or Issued.",
+    passportSlotDetectionOnly: "This monitor only detects available GTS appointment slots and sends notifications. It does not automatically book, hold, or grab slots.",
     passportSlotIdentifier: "UID or HAL",
     passportSlotIdentifierPlaceholder: "106417002 or HAL0123456789",
     passportSlotSave: "Save monitor",
@@ -352,7 +367,15 @@ const translations = {
     ceacAutoLockedByPassportSlot: "CEAC automatic checks were stopped because GTS indicates the passport is ready for appointment. Only an admin can restore CEAC automatic checks.",
     restoreCeacAutoQuery: "Restore CEAC auto checks",
     ceacAutoQueryRestored: "CEAC automatic checks restored.",
+    supportTitle: "Support this nonprofit project",
+    supportBody: "If CEACStatusBot helps you, voluntary support helps cover server and maintenance costs.",
+    supportPremium: "Premium upgrade: share a Xiaohongshu post with the site link, screenshots, and your experience, then contact the admin; or leave your account email in the donation note for manual review.",
+    supportDisclaimer: "Non-official service. Not affiliated with the U.S. Department of State, CEAC, GTS, or CITIC Bank. Donations are voluntary support, not a purchase of official services, and do not guarantee visa results, passport progress, slot availability, or booking success. Do not publicly share screenshots containing UID/HAL/passport data.",
+    nonprofitNotice: "Nonprofit personal project",
+    contactEmail: "Contact: ceac-admin@mikezhuang.cn",
+    sourceCode: "Source code",
     workerPriority: "Worker priority",
+    workerPriorityHint: "Smaller number runs earlier. Premium defaults to 50; Standard defaults to 100.",
     saveWorkerPriority: "Save priority",
     workerPrioritySaved: "Worker priority saved.",
     noPassportSlotMonitor: "No UID/HAL monitor yet",
@@ -362,6 +385,12 @@ const translations = {
     admin: "管理员",
     adminTitle: "管理后台",
     adminUsers: "用户资料",
+    accountTier: "账号等级",
+    accountTierStandard: "普通账号",
+    accountTierPremium: "Premium 账号",
+    accountTierSaved: "账号等级已保存。",
+    accountTierLimits: "普通账号：1 个档案、每天 1 次手动刷新；Premium：5 个档案、手动刷新额度很高。",
+    accountTierCurrent: "当前账号等级",
     appSubtitle: "签证状态监控、查询历史与邮件提醒。",
     applicationId: "Application ID 或 Case Number",
     autoMonitor: "启用自动监控",
@@ -398,6 +427,7 @@ const translations = {
     keepPasswordPlaceholder: "留空则保留当前授权码",
     login: "登录",
     loginAction: "登录控制台",
+    logItems: "条日志",
     logoutTitle: "退出登录",
     missingCaseNumber: "未提供流水号",
     noCases: "尚未添加档案",
@@ -475,6 +505,7 @@ const translations = {
     passportSlotMonitor: "护照预约监控",
     passportSlotIntro: "Approved 或 Issued 后填写 UID/HAL，系统会轮询 GTS 可预约时间。",
     passportSlotEarlyHint: "你可以提前配置；但 GTS 通常在 Approved 或 Issued 后才会返回有效 token。",
+    passportSlotDetectionOnly: "本功能只负责检测 GTS 可预约 slot 并发送提醒，不支持自动预约、占位或抢 slot。",
     passportSlotIdentifier: "UID 或 HAL",
     passportSlotIdentifierPlaceholder: "106417002 或 HAL0123456789",
     passportSlotSave: "保存监控",
@@ -504,7 +535,15 @@ const translations = {
     ceacAutoLockedByPassportSlot: "GTS 已确认护照进入可预约阶段，系统已自动停止该档案的 CEAC 自动查询；只有管理员可以恢复。",
     restoreCeacAutoQuery: "恢复 CEAC 自动查询",
     ceacAutoQueryRestored: "已恢复 CEAC 自动查询。",
+    supportTitle: "支持这个非盈利项目",
+    supportBody: "如果 CEACStatusBot 对你有帮助，欢迎自愿赞赏支持服务器和维护成本。",
+    supportPremium: "Premium 升级方式：在小红书发布包含网站链接、使用截图和使用感受的帖子后联系管理员；或赞赏时备注账号邮箱，管理员人工核对后升级。",
+    supportDisclaimer: "本站为非官方服务，不隶属于美国国务院、CEAC、GTS 或中信银行。赞赏是自愿支持，不购买官方服务，不保证签证结果、护照进度、slot 可用性或预约成功。请勿公开截图泄露 UID/HAL/护照等个人信息。",
+    nonprofitNotice: "非盈利个人项目",
+    contactEmail: "联系邮箱：ceac-admin@mikezhuang.cn",
+    sourceCode: "开源仓库",
     workerPriority: "Worker 优先级",
+    workerPriorityHint: "数值越小越优先。Premium 默认 50，普通账号默认 100。",
     saveWorkerPriority: "保存优先级",
     workerPrioritySaved: "Worker 优先级已保存。",
     noPassportSlotMonitor: "尚未配置 UID/HAL 监控",
@@ -567,6 +606,10 @@ function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryRun["trigge
     return t("triggerAutomatic");
   }
   return t("triggerUnknown");
+}
+
+function formatAccountTier(value: AccountTier, t: (key: TranslationKey) => string): string {
+  return value === "premium" ? t("accountTierPremium") : t("accountTierStandard");
 }
 
 function getStatusTone(status: string | null | undefined): "issued" | "approved" | "refused" | "" {
@@ -643,9 +686,15 @@ export function App() {
   const [registerCode, setRegisterCode] = useState("");
   const [resetCode, setResetCode] = useState("");
   const [resetConfirmPassword, setResetConfirmPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ scope: MessageScope; text: string } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const t = (key: TranslationKey) => translations[languageMode][key];
+  const activeScope: MessageScope = user ? viewMode : "auth";
+  const activeMessage = message?.scope === activeScope ? message.text : "";
+
+  function showMessage(text: string, scope: MessageScope = activeScope) {
+    setMessage(text ? { scope, text } : null);
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -729,7 +778,7 @@ export function App() {
   async function saveSystemEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       const payload = await requestJson<{ config: SystemEmailConfig }>("/api/admin/system-email", {
         method: "PUT",
@@ -743,9 +792,9 @@ export function App() {
       });
       setSystemEmailConfig(payload.config);
       setSystemEmailForm((current) => ({ ...current, password: "" }));
-      setMessage(t("systemEmailSaved"));
+      showMessage(t("systemEmailSaved"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -754,11 +803,11 @@ export function App() {
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       if (authMode === "forgot") {
         if (authPassword !== resetConfirmPassword) {
-          setMessage(t("resetPasswordMismatch"));
+          showMessage(t("resetPasswordMismatch"));
           return;
         }
         await requestJson<{ ok: boolean }>("/api/auth/reset-password", {
@@ -769,7 +818,7 @@ export function App() {
         setAuthPassword("");
         setResetCode("");
         setResetConfirmPassword("");
-        setMessage(t("resetPasswordSaved"));
+        showMessage(t("resetPasswordSaved"));
         return;
       }
       const path = authMode === "login" ? "/api/auth/login" : "/api/auth/register";
@@ -793,7 +842,7 @@ export function App() {
       setProfileForm({ email: payload.user.email, currentPassword: "", newPassword: "", confirmPassword: "" });
       await loadCases();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("signInFailed"));
+      showMessage(error instanceof Error ? error.message : t("signInFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -801,16 +850,16 @@ export function App() {
 
   async function sendCode() {
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       const path = authMode === "forgot" ? "/api/auth/send-password-reset-code" : "/api/auth/send-code";
       await requestJson<{ ok: boolean }>(path, {
         method: "POST",
         body: JSON.stringify({ email: authEmail }),
       });
-      setMessage(authMode === "forgot" ? t("resetCodeSent") : t("verificationCodeSent"));
+      showMessage(authMode === "forgot" ? t("resetCodeSent") : t("verificationCodeSent"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("sendCodeFailed"));
+      showMessage(error instanceof Error ? error.message : t("sendCodeFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -826,9 +875,9 @@ export function App() {
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) {
-      setMessage(languageMode === "zh" ? "两次输入的新密码不一致。" : "New passwords do not match.");
+      showMessage(languageMode === "zh" ? "两次输入的新密码不一致。" : "New passwords do not match.");
       setIsBusy(false);
       return;
     }
@@ -844,9 +893,9 @@ export function App() {
       setUser(payload.user);
       setProfileForm({ email: payload.user.email, currentPassword: "", newPassword: "", confirmPassword: "" });
       localStorage.setItem("rememberedEmail", payload.user.email);
-      setMessage(t("profileSaved"));
+      showMessage(t("profileSaved"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -855,7 +904,7 @@ export function App() {
   async function saveCase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       const payload = {
         displayName: caseForm.displayName,
@@ -884,9 +933,9 @@ export function App() {
       setCaseForm(emptyCaseForm);
       setSelectedCaseId(result.case.id);
       await loadCases();
-      setMessage(t("caseCreated"));
+      showMessage(t("caseCreated"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -894,7 +943,7 @@ export function App() {
 
   async function runTest(caseId: number) {
     setIsBusy(true);
-    setMessage(t("queryInProgress"));
+    showMessage(t("queryInProgress"));
     try {
       const payload = await requestJson<{ jobId: number; status: QueryJob["status"] }>(`/api/cases/${caseId}/test-query`, {
         method: "POST",
@@ -912,17 +961,17 @@ export function App() {
       await loadCases();
       await loadHistory(caseId);
       if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
-        setMessage(t("queryInProgress"));
+        showMessage(t("queryInProgress"));
         return;
       }
       const result = job.result;
-      setMessage(
+      showMessage(
         result?.success
           ? (result.changed ? t("fastQueryChanged") : t("fastQueryUnchanged"))
           : (job.errorMessage || result?.error || t("requestFailed")),
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -930,15 +979,15 @@ export function App() {
 
   async function sendTestEmail(caseId: number) {
     setIsBusy(true);
-    setMessage(t("testEmailSending"));
+    showMessage(t("testEmailSending"));
     try {
       await requestJson<{ success: boolean; error: string }>(`/api/cases/${caseId}/test-email`, {
         method: "POST",
         body: "{}",
       });
-      setMessage(t("testEmailSent"));
+      showMessage(t("testEmailSent"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -946,16 +995,16 @@ export function App() {
 
   async function toggleEmailPush(targetCase: CeacCase) {
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       await requestJson<{ case: CeacCase }>(`/api/cases/${targetCase.id}`, {
         method: "PATCH",
         body: JSON.stringify({ emailNotificationsEnabled: !targetCase.emailNotificationsEnabled }),
       });
       await loadCases();
-      setMessage(!targetCase.emailNotificationsEnabled ? t("updatePushEnabled") : t("updatePushDisabled"));
+      showMessage(!targetCase.emailNotificationsEnabled ? t("updatePushEnabled") : t("updatePushDisabled"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -963,16 +1012,16 @@ export function App() {
 
   async function stopAutomaticQuery(targetCase: CeacCase) {
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       await requestJson<{ case: CeacCase }>(`/api/cases/${targetCase.id}`, {
         method: "PATCH",
         body: JSON.stringify({ isEnabled: false }),
       });
       await loadCases();
-      setMessage(t("automaticQueryStopped"));
+      showMessage(t("automaticQueryStopped"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -984,7 +1033,7 @@ export function App() {
       return;
     }
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       const payload = await requestJson<{ monitor: PassportSlotMonitor }>(`/api/cases/${selectedCase.id}/passport-slot-monitor`, {
         method: "PUT",
@@ -997,9 +1046,9 @@ export function App() {
       setPassportSlotMonitor(payload.monitor);
       setPassportSlotIdentifier(payload.monitor.identifier);
       await loadPassportSlotMonitor(selectedCase.id);
-      setMessage(t("passportSlotSaved"));
+      showMessage(t("passportSlotSaved"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -1007,16 +1056,16 @@ export function App() {
 
   async function togglePassportSlotMonitor(targetCase: CeacCase, targetMonitor: PassportSlotMonitor) {
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       const payload = await requestJson<{ monitor: PassportSlotMonitor }>(`/api/cases/${targetCase.id}/passport-slot-monitor`, {
         method: "PATCH",
         body: JSON.stringify({ isEnabled: !targetMonitor.isEnabled }),
       });
       setPassportSlotMonitor(payload.monitor);
-      setMessage(!targetMonitor.isEnabled ? t("passportSlotEnabled") : t("passportSlotDisabled"));
+      showMessage(!targetMonitor.isEnabled ? t("passportSlotEnabled") : t("passportSlotDisabled"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -1024,16 +1073,16 @@ export function App() {
 
   async function confirmPassportSlotBooked(targetCase: CeacCase, targetMonitor: PassportSlotMonitor) {
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       const payload = await requestJson<{ monitor: PassportSlotMonitor }>(`/api/cases/${targetCase.id}/passport-slot-monitor`, {
         method: "PATCH",
         body: JSON.stringify({ isEnabled: false }),
       });
       setPassportSlotMonitor(payload.monitor);
-      setMessage(t("passportSlotBookedStopped"));
+      showMessage(t("passportSlotBookedStopped"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -1041,16 +1090,16 @@ export function App() {
 
   async function togglePassportSlotEmailNotifications(targetCase: CeacCase, targetMonitor: PassportSlotMonitor) {
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       const payload = await requestJson<{ monitor: PassportSlotMonitor }>(`/api/cases/${targetCase.id}/passport-slot-monitor`, {
         method: "PATCH",
         body: JSON.stringify({ emailNotificationsEnabled: !targetMonitor.emailNotificationsEnabled }),
       });
       setPassportSlotMonitor(payload.monitor);
-      setMessage(!targetMonitor.emailNotificationsEnabled ? t("passportSlotEmailEnabled") : t("passportSlotEmailDisabled"));
+      showMessage(!targetMonitor.emailNotificationsEnabled ? t("passportSlotEmailEnabled") : t("passportSlotEmailDisabled"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -1058,7 +1107,7 @@ export function App() {
 
   async function runPassportSlotQuery(caseId: number) {
     setIsBusy(true);
-    setMessage(t("passportSlotQuerying"));
+    showMessage(t("passportSlotQuerying"));
     try {
       const payload = await requestJson<{ jobId: number; status: QueryJob["status"] }>(`/api/cases/${caseId}/passport-slot-monitor/test-query`, {
         method: "POST",
@@ -1076,25 +1125,25 @@ export function App() {
       await loadPassportSlotMonitor(caseId);
       await loadCases();
       if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
-        setMessage(t("passportSlotQuerying"));
+        showMessage(t("passportSlotQuerying"));
         return;
       }
       const result = job.result;
       if (!result?.success) {
-        setMessage(job.errorMessage || result?.error || t("requestFailed"));
+        showMessage(job.errorMessage || result?.error || t("requestFailed"));
         return;
       }
       if (result.slotStatus === "not_eligible") {
-        setMessage(t("passportSlotNotEligible"));
+        showMessage(t("passportSlotNotEligible"));
       } else if (result.slotStatus === "no_slot") {
-        setMessage(t("passportSlotNoSlot"));
+        showMessage(t("passportSlotNoSlot"));
       } else if ((result.slotCount ?? 0) > 0) {
-        setMessage(result.changed ? t("passportSlotChanged") : t("passportSlotFound"));
+        showMessage(result.changed ? t("passportSlotChanged") : t("passportSlotFound"));
       } else {
-        setMessage(t("passportSlotNotFound"));
+        showMessage(t("passportSlotNotFound"));
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -1102,15 +1151,15 @@ export function App() {
 
   async function sendPassportSlotTestEmail(caseId: number) {
     setIsBusy(true);
-    setMessage(t("passportSlotTestEmailSending"));
+    showMessage(t("passportSlotTestEmailSending"));
     try {
       await requestJson<{ success: boolean; error: string }>(`/api/cases/${caseId}/passport-slot-monitor/test-email`, {
         method: "POST",
         body: "{}",
       });
-      setMessage(t("passportSlotTestEmailSent"));
+      showMessage(t("passportSlotTestEmailSent"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -1118,16 +1167,33 @@ export function App() {
 
   async function updateWorkerPriority(userId: number, workerPriority: number) {
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       await requestJson<{ user: AdminUser }>(`/api/admin/users/${userId}/worker-priority`, {
         method: "PATCH",
         body: JSON.stringify({ workerPriority }),
       });
       await loadAdminData();
-      setMessage(t("workerPrioritySaved"));
+      showMessage(t("workerPrioritySaved"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function updateAccountTier(userId: number, accountTier: AccountTier) {
+    setIsBusy(true);
+    showMessage("");
+    try {
+      await requestJson<{ user: AdminUser }>(`/api/admin/users/${userId}/account-tier`, {
+        method: "PATCH",
+        body: JSON.stringify({ accountTier }),
+      });
+      await loadAdminData();
+      showMessage(t("accountTierSaved"));
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -1135,7 +1201,7 @@ export function App() {
 
   async function restoreCeacAutoQuery(caseId: number) {
     setIsBusy(true);
-    setMessage("");
+    showMessage("");
     try {
       await requestJson<{ case: CeacCase }>(`/api/admin/cases/${caseId}/restore-ceac-auto-query`, {
         method: "POST",
@@ -1143,9 +1209,9 @@ export function App() {
       });
       await loadAdminData();
       await loadCases();
-      setMessage(t("ceacAutoQueryRestored"));
+      showMessage(t("ceacAutoQueryRestored"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("requestFailed"));
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
       setIsBusy(false);
     }
@@ -1200,7 +1266,7 @@ export function App() {
                   <input type="checkbox" checked={rememberLogin} onChange={(event) => setRememberLogin(event.target.checked)} />
                   <span className="body-sm">{t("rememberPassword")}</span>
                 </label>
-                <button type="button" className="text-button" onClick={() => { setAuthMode("forgot"); setMessage(""); }}>
+                <button type="button" className="text-button" onClick={() => { setAuthMode("forgot"); showMessage(""); }}>
                   {t("forgotPassword")}
                 </button>
               </div>
@@ -1237,14 +1303,15 @@ export function App() {
               {authMode === "login" ? t("loginAction") : authMode === "register" ? t("registerAction") : t("resetAction")}
             </button>
             {authMode === "forgot" && (
-              <button type="button" className="text-button centered" onClick={() => { setAuthMode("login"); setMessage(""); }}>
+              <button type="button" className="text-button centered" onClick={() => { setAuthMode("login"); showMessage(""); }}>
                 {t("login")}
               </button>
             )}
-            {message && <p className="notice">{message}</p>}
+            {activeMessage && <p className="notice">{activeMessage}</p>}
           </form>
         </section>
-        <SiteFooter />
+        <SupportPanel t={t} compact />
+        <SiteFooter t={t} />
       </main>
     );
   }
@@ -1294,7 +1361,7 @@ export function App() {
               {viewMode === "admin" ? t("adminTitle") : viewMode === "profile" ? t("personalInfo") : t("statusMonitoring")}
             </h1>
           </div>
-          {message && <p className="notice">{message}</p>}
+          {activeMessage && <p className="notice">{activeMessage}</p>}
         </header>
 
         {viewMode === "dashboard" ? (
@@ -1320,6 +1387,7 @@ export function App() {
                   {cases.length === 0 && <p className="empty-state">{t("noCases")}</p>}
                 </div>
               </section>
+              <SupportPanel t={t} />
             </div>
 
             <div className="stack">
@@ -1443,6 +1511,7 @@ export function App() {
           </div>
         ) : viewMode === "profile" ? (
           <ProfilePanel
+            user={user}
             profileForm={profileForm}
             setProfileForm={setProfileForm}
             saveProfile={saveProfile}
@@ -1462,26 +1531,48 @@ export function App() {
             systemEmailForm={systemEmailForm}
             setSystemEmailForm={setSystemEmailForm}
             saveSystemEmail={saveSystemEmail}
+            updateAccountTier={updateAccountTier}
             updateWorkerPriority={updateWorkerPriority}
             restoreCeacAutoQuery={restoreCeacAutoQuery}
             isBusy={isBusy}
           />
         )}
       </section>
-      <SiteFooter />
+      <SiteFooter t={t} />
     </main>
   );
 }
 
-function SiteFooter() {
-  if (!icpRecordNumber) {
-    return null;
-  }
+function SupportPanel(props: { t: (key: TranslationKey) => string; compact?: boolean }) {
+  return (
+    <section className={`support-card ${props.compact ? "compact" : ""}`}>
+      <div className="support-copy">
+        <div className="support-title">
+          <HeartHandshake size={16} />
+          <span>{props.t("supportTitle")}</span>
+        </div>
+        <p>{props.t("supportBody")}</p>
+        <p>{props.t("supportPremium")}</p>
+        <p className="support-disclaimer">{props.t("supportDisclaimer")}</p>
+      </div>
+      <img src="/support/buy-me-a-coffee.jpg" alt={props.t("supportTitle")} />
+    </section>
+  );
+}
+
+function SiteFooter(props: { t: (key: TranslationKey) => string }) {
   return (
     <footer className="site-footer">
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
-        {icpRecordNumber}
+      <span>{props.t("nonprofitNotice")}</span>
+      <span>{props.t("contactEmail")}</span>
+      <a href="https://github.com/Mike-Zhuang/CEACStatusBot_Web" target="_blank" rel="noreferrer">
+        {props.t("sourceCode")}
       </a>
+      {icpRecordNumber && (
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
+          {icpRecordNumber}
+        </a>
+      )}
     </footer>
   );
 }
@@ -1597,6 +1688,7 @@ function PassportSlotMonitorPanel(props: {
           <p className="form-intro">
             {isReadyStatus ? props.t("passportSlotIntro") : props.t("passportSlotEarlyHint")}
           </p>
+          <p className="form-intro compact">{props.t("passportSlotDetectionOnly")}</p>
         </div>
         {props.monitor && (
           <span className={`status-badge ${props.monitor.isEnabled ? "success" : ""}`}>
@@ -1713,6 +1805,7 @@ function PassportSlotMonitorPanel(props: {
 }
 
 function ProfilePanel(props: {
+  user: User;
   profileForm: ProfileForm;
   setProfileForm: React.Dispatch<React.SetStateAction<ProfileForm>>;
   saveProfile: (event: FormEvent<HTMLFormElement>) => Promise<void>;
@@ -1725,6 +1818,10 @@ function ProfilePanel(props: {
     <section className="panel narrow-panel profile-panel">
       <div className="panel-title">
         <h2 className="headline">{props.t("personalInfo")}</h2>
+      </div>
+      <div className="account-tier-card">
+        <Metric label={props.t("accountTierCurrent")} value={formatAccountTier(props.user.account_tier, props.t)} />
+        <p className="form-intro compact">{props.t("accountTierLimits")}</p>
       </div>
       <form className="stack" onSubmit={props.saveProfile}>
         <label>
@@ -1787,12 +1884,14 @@ function AdminPanel(props: {
   systemEmailForm: SystemEmailForm;
   setSystemEmailForm: React.Dispatch<React.SetStateAction<SystemEmailForm>>;
   saveSystemEmail: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  updateAccountTier: (userId: number, accountTier: AccountTier) => Promise<void>;
   updateWorkerPriority: (userId: number, workerPriority: number) => Promise<void>;
   restoreCeacAutoQuery: (caseId: number) => Promise<void>;
   isBusy: boolean;
 }) {
   const form = props.systemEmailForm;
   const [priorityDrafts, setPriorityDrafts] = useState<Record<number, string>>({});
+  const [collapsedLogUsers, setCollapsedLogUsers] = useState<Record<string, boolean>>({});
   const casesByUserId = useMemo(() => {
     const grouped = new Map<number, CeacCase[]>();
     for (const item of props.cases) {
@@ -1800,6 +1899,17 @@ function AdminPanel(props: {
     }
     return grouped;
   }, [props.cases]);
+  const queryRunsByUser = useMemo(() => {
+    const grouped = new Map<string, QueryRun[]>();
+    for (const run of props.queryRuns) {
+      const email = run.user_email || props.t("triggerUnknown");
+      grouped.set(email, [...(grouped.get(email) ?? []), run]);
+    }
+    return Array.from(grouped.entries()).sort(([emailA], [emailB]) => emailA.localeCompare(emailB));
+  }, [props.queryRuns, props.t]);
+  const toggleLogUser = (email: string) => {
+    setCollapsedLogUsers((current) => ({ ...current, [email]: !current[email] }));
+  };
   return (
     <div className="stack">
       <section className="panel">
@@ -1882,12 +1992,23 @@ function AdminPanel(props: {
                   <div>
                     <div className="case-name">{adminUser.email}</div>
                     <div className="case-meta">
-                      {adminUser.role} · {adminUser.is_email_verified ? props.t("verified") : props.t("notVerified")}
+                      {adminUser.role} · {formatAccountTier(adminUser.account_tier, props.t)} · {adminUser.is_email_verified ? props.t("verified") : props.t("notVerified")}
                     </div>
                   </div>
                   <span className="status-badge">{adminUser.case_count} {props.t("casesOwned")}</span>
                 </div>
-                <div className="admin-priority-row">
+                <div className="admin-controls-row">
+                  <label>
+                    {props.t("accountTier")}
+                    <select
+                      value={adminUser.account_tier}
+                      onChange={(event) => props.updateAccountTier(adminUser.id, event.target.value as AccountTier)}
+                      disabled={props.isBusy}
+                    >
+                      <option value="standard">{props.t("accountTierStandard")}</option>
+                      <option value="premium">{props.t("accountTierPremium")}</option>
+                    </select>
+                  </label>
                   <label>
                     {props.t("workerPriority")}
                     <input
@@ -1907,6 +2028,7 @@ function AdminPanel(props: {
                     {props.t("saveWorkerPriority")}
                   </button>
                 </div>
+                <p className="form-intro compact">{props.t("workerPriorityHint")}</p>
                 <div className="admin-user-metrics">
                   <Metric label={props.t("lastQuery")} value={formatTime(adminUser.last_checked_at, props.languageMode)} />
                   <Metric label={props.t("createdAt")} value={formatTime(adminUser.created_at, props.languageMode)} />
@@ -1943,71 +2065,89 @@ function AdminPanel(props: {
           <h2 className="headline">{props.t("systemLogs")}</h2>
           <button className="button secondary" onClick={props.reload}>{props.t("refresh")}</button>
         </div>
-        <div className="log-table-wrap">
-          <table className="log-table">
-            <thead>
-              <tr>
-                <th>{props.t("lastCheckedAt")}</th>
-                <th>{props.t("executor")}</th>
-                <th>{props.t("profile")}</th>
-                <th>{props.t("applicationId")}</th>
-                <th>{props.t("lastCheckMode")}</th>
-                <th>{props.t("status")}</th>
-                <th>{props.t("duration")}</th>
-                <th>{props.t("changeContent")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {props.queryRuns.map((run) => (
-                <tr key={run.id}>
-                  <td>{formatTime(run.finished_at, props.languageMode)}</td>
-                  <td>{run.user_email}</td>
-                  <td>{run.display_name}</td>
-                  <td className="mono-text">{run.application_num}</td>
-                  <td>{formatTriggerType(run.trigger_type, props.t)}</td>
-                  <td>
-                    <span className={`status-badge ${run.success ? "success" : "error"}`}>
-                      {run.success ? props.t("success") : props.t("error")}
-                    </span>
-                  </td>
-                  <td className="mono-text">{run.duration_ms}ms</td>
-                  <td>
-                    {run.status ? (
-                      <span className={getStatusBadgeClass(run.status)}>{run.status}</span>
-                    ) : (
-                      run.error_message || props.t("noStatusChange")
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="log-card-list">
-            {props.queryRuns.map((run) => (
-              <div key={run.id} className="log-card">
-                <div className="log-card-header">
-                  <span>{formatTime(run.finished_at, props.languageMode)}</span>
-                  <span className={`status-badge ${run.success ? "success" : "error"}`}>
-                    {run.success ? props.t("success") : props.t("error")}
+        <div className="log-groups">
+          {queryRunsByUser.map(([email, runs]) => {
+            const isCollapsed = collapsedLogUsers[email] ?? false;
+            return (
+              <section key={email} className={`log-group ${isCollapsed ? "collapsed" : ""}`}>
+                <button type="button" className="log-group-header" onClick={() => toggleLogUser(email)}>
+                  <span className="log-group-title">
+                    {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                    <span>{email}</span>
                   </span>
-                </div>
-                <div className="log-card-grid">
-                  <Metric label={props.t("executor")} value={run.user_email} />
-                  <Metric label={props.t("profile")} value={run.display_name} />
-                  <Metric label={props.t("applicationId")} value={run.application_num} />
-                  <Metric label={props.t("lastCheckMode")} value={formatTriggerType(run.trigger_type, props.t)} />
-                  <Metric label={props.t("duration")} value={`${run.duration_ms}ms`} />
-                  <Metric label={props.t("changeContent")}>
-                    {run.status ? (
-                      <span className={getStatusBadgeClass(run.status, "metric-status")}>{run.status}</span>
-                    ) : (
-                      run.error_message || props.t("noStatusChange")
-                    )}
-                  </Metric>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <span className="status-badge">{runs.length} {props.t("logItems")}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="log-table-wrap">
+                    <table className="log-table">
+                      <thead>
+                        <tr>
+                          <th>{props.t("lastCheckedAt")}</th>
+                          <th>{props.t("executor")}</th>
+                          <th>{props.t("profile")}</th>
+                          <th>{props.t("applicationId")}</th>
+                          <th>{props.t("lastCheckMode")}</th>
+                          <th>{props.t("status")}</th>
+                          <th>{props.t("duration")}</th>
+                          <th>{props.t("changeContent")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {runs.map((run) => (
+                          <tr key={run.id}>
+                            <td>{formatTime(run.finished_at, props.languageMode)}</td>
+                            <td>{run.user_email}</td>
+                            <td>{run.display_name}</td>
+                            <td className="mono-text">{run.application_num}</td>
+                            <td>{formatTriggerType(run.trigger_type, props.t)}</td>
+                            <td>
+                              <span className={`status-badge ${run.success ? "success" : "error"}`}>
+                                {run.success ? props.t("success") : props.t("error")}
+                              </span>
+                            </td>
+                            <td className="mono-text">{run.duration_ms}ms</td>
+                            <td>
+                              {run.status ? (
+                                <span className={getStatusBadgeClass(run.status)}>{run.status}</span>
+                              ) : (
+                                run.error_message || props.t("noStatusChange")
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="log-card-list">
+                      {runs.map((run) => (
+                        <div key={run.id} className="log-card">
+                          <div className="log-card-header">
+                            <span>{formatTime(run.finished_at, props.languageMode)}</span>
+                            <span className={`status-badge ${run.success ? "success" : "error"}`}>
+                              {run.success ? props.t("success") : props.t("error")}
+                            </span>
+                          </div>
+                          <div className="log-card-grid">
+                            <Metric label={props.t("executor")} value={run.user_email} />
+                            <Metric label={props.t("profile")} value={run.display_name} />
+                            <Metric label={props.t("applicationId")} value={run.application_num} />
+                            <Metric label={props.t("lastCheckMode")} value={formatTriggerType(run.trigger_type, props.t)} />
+                            <Metric label={props.t("duration")} value={`${run.duration_ms}ms`} />
+                            <Metric label={props.t("changeContent")}>
+                              {run.status ? (
+                                <span className={getStatusBadgeClass(run.status, "metric-status")}>{run.status}</span>
+                              ) : (
+                                run.error_message || props.t("noStatusChange")
+                              )}
+                            </Metric>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            );
+          })}
           {props.queryRuns.length === 0 && <p className="empty-state">{props.t("noLogs")}</p>}
         </div>
       </section>
