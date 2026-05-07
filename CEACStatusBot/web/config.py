@@ -41,7 +41,7 @@ class Settings:
             ).split(",")
             if origin.strip()
         ]
-        self.workerPollIntervalSeconds = max(1, int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "3")))
+        self.workerPollIntervalSeconds = max(1, int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "1")))
         self.dailyManualQueryLimit = max(1, int(os.getenv("DAILY_MANUAL_QUERY_LIMIT", "20")))
 
     def getFernet(self) -> Fernet:

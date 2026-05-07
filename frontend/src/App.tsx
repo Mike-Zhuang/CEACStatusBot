@@ -84,6 +84,9 @@ interface QueryJob {
     success: boolean;
     changed: boolean;
     error: string;
+    slotStatus?: "not_eligible" | "no_slot" | "has_slot" | "unknown";
+    slotCount?: number;
+    notified?: boolean;
   } | null;
   createdAt: string;
   updatedAt: string;
@@ -106,6 +109,9 @@ interface PassportSlotMonitor {
     success?: boolean;
     availableSlots?: unknown[];
     availableDates?: unknown[];
+    slotStatus?: "not_eligible" | "no_slot" | "has_slot" | "unknown";
+    statusMessage?: string;
+    hasSlotStableCount?: number;
     raw?: unknown;
     error?: string;
   } | null;
@@ -331,6 +337,10 @@ const translations = {
     passportSlotNotFound: "GTS slot query completed: no available slot.",
     passportSlotChanged: "GTS slot result changed.",
     passportSlotConfigured: "Configured identifier",
+    passportSlotCurrentStatus: "Current GTS status",
+    passportSlotNotEligible: "Not eligible for passport appointment yet.",
+    passportSlotNoSlot: "Eligible, but no available slot.",
+    passportSlotStatusHasSlot: "Available slots found.",
     passportSlotLastCount: "Last slot count",
     passportSlotLastError: "Last GTS error",
     passportSlotHistory: "Slot change history",
@@ -471,6 +481,10 @@ const translations = {
     passportSlotNotFound: "GTS slot 查询完成：暂无可预约时间。",
     passportSlotChanged: "GTS slot 结果发生变化。",
     passportSlotConfigured: "已配置编号",
+    passportSlotCurrentStatus: "当前 GTS 状态",
+    passportSlotNotEligible: "暂不具备护照预约资格。",
+    passportSlotNoSlot: "已可预约但暂无 slot。",
+    passportSlotStatusHasSlot: "发现可预约时间。",
     passportSlotLastCount: "最近 slot 数量",
     passportSlotLastError: "最近 GTS 错误",
     passportSlotHistory: "slot 变化历史",
@@ -1028,12 +1042,16 @@ export function App() {
         setMessage(t("passportSlotQuerying"));
         return;
       }
-      const result = job.result as (QueryJob["result"] & { slotCount?: number; notified?: boolean }) | null;
+      const result = job.result;
       if (!result?.success) {
         setMessage(job.errorMessage || result?.error || t("requestFailed"));
         return;
       }
-      if ((result.slotCount ?? 0) > 0) {
+      if (result.slotStatus === "not_eligible") {
+        setMessage(t("passportSlotNotEligible"));
+      } else if (result.slotStatus === "no_slot") {
+        setMessage(t("passportSlotNoSlot"));
+      } else if ((result.slotCount ?? 0) > 0) {
         setMessage(result.changed ? t("passportSlotChanged") : t("passportSlotFound"));
       } else {
         setMessage(t("passportSlotNotFound"));
@@ -1424,6 +1442,12 @@ function Metric(props: { label: string; value?: string; children?: React.ReactNo
 }
 
 function summarizePassportSlotResult(result: PassportSlotMonitor["lastResult"], languageMode: LanguageMode): string {
+  if (result?.slotStatus === "not_eligible") {
+    return result.statusMessage || (languageMode === "zh" ? "暂不具备护照预约资格" : "Not eligible for passport appointment yet");
+  }
+  if (result?.slotStatus === "no_slot") {
+    return result.statusMessage || (languageMode === "zh" ? "已可预约但暂无 slot" : "Eligible, but no available slot");
+  }
   const slots = Array.isArray(result?.availableSlots)
     ? result.availableSlots
     : Array.isArray(result?.availableDates)
@@ -1442,6 +1466,19 @@ function summarizePassportSlotResult(result: PassportSlotMonitor["lastResult"], 
     }
     return String(slot);
   }).join(" | ");
+}
+
+function formatPassportSlotStatus(result: PassportSlotMonitor["lastResult"], t: (key: TranslationKey) => string): string {
+  if (result?.slotStatus === "not_eligible") {
+    return t("passportSlotNotEligible");
+  }
+  if (result?.slotStatus === "no_slot") {
+    return t("passportSlotNoSlot");
+  }
+  if (result?.slotStatus === "has_slot") {
+    return t("passportSlotStatusHasSlot");
+  }
+  return result?.statusMessage || t("waitFirstQuery");
 }
 
 function PassportSlotMonitorPanel(props: {
@@ -1495,10 +1532,13 @@ function PassportSlotMonitorPanel(props: {
         <div className="stack">
           <div className="two-col metric-grid">
             <Metric label={props.t("passportSlotConfigured")} value={props.monitor.identifierMasked} />
-            <Metric label={props.t("passportSlotLastCount")} value={String(props.monitor.lastSlotCount)} />
+            <Metric label={props.t("passportSlotCurrentStatus")} value={formatPassportSlotStatus(props.monitor.lastResult, props.t)} />
           </div>
           <div className="two-col metric-grid">
+            <Metric label={props.t("passportSlotLastCount")} value={String(props.monitor.lastSlotCount)} />
             <Metric label={props.t("lastCheckedAt")} value={formatTime(props.monitor.lastCheckedAt, props.languageMode)} />
+          </div>
+          <div className="two-col metric-grid">
             <Metric label={props.t("nextCheckAt")} value={formatTime(props.monitor.nextCheckAt, props.languageMode)} />
           </div>
           <Metric label={props.t("changeContent")} value={summarizePassportSlotResult(props.monitor.lastResult, props.languageMode)} />
@@ -1556,7 +1596,7 @@ function PassportSlotMonitorPanel(props: {
             {props.history.slice(0, 3).map((item) => (
               <div key={item.id} className="mini-history-row">
                 <span>{formatTime(item.fetchedAt, props.languageMode)}</span>
-                <span>{item.slotCount} slot</span>
+                <span>{formatPassportSlotStatus(item.rawPayload as PassportSlotMonitor["lastResult"], props.t)} / {item.slotCount} slot</span>
                 <span>{item.notificationSent ? props.t("emailPushOn") : props.t("noStatusChange")}</span>
               </div>
             ))}

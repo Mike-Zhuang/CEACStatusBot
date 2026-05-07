@@ -81,7 +81,7 @@ Open `http://127.0.0.1:5173`. VS Code debug configuration lives in `.vscode/laun
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Frontend origins allowed to access the backend |
 | `CSRF_TRUSTED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Trusted Origin / Referer values for sensitive requests |
 | `COOKIE_SECURE` | `false` | Defaults to `false` locally. Must be `true` behind HTTPS in production |
-| `WORKER_POLL_INTERVAL_SECONDS` | `3` | Worker polling interval for the SQLite job queue |
+| `WORKER_POLL_INTERVAL_SECONDS` | `1` | Worker polling interval for the SQLite job queue. GTS midnight burst jobs need second-level pickup |
 | `DAILY_MANUAL_QUERY_LIMIT` | `20` | Daily CEAC/GTS manual query limit for non-admin accounts. Admin accounts are not limited |
 | `SEED_DEFAULT_USERS` | `false` | Local demo account seed switch. Must remain `false` in public deployments |
 | `DEFAULT_ADMIN_EMAIL` | Empty | Seed admin email, only used when `SEED_DEFAULT_USERS=true` |
@@ -112,7 +112,7 @@ The system compares the latest history item with the current CEAC result:
 
 If a profile disables status update email notifications, the system still performs scheduled checks and records the timeline, but does not send automatic emails when the status changes. Users can still click `Test email` to send the latest existing status template manually.
 
-Passport appointment slot monitoring uses the same-origin GTS API flow: authenticate with UID/HAL via `https://scheduling-api.gtspremium.com/authenticate`, then call `/availability7days/` to query 7-day availability. UID/HAL, raw GTS responses, and slot-change history are encrypted at rest. The system stores a normalized slot fingerprint. Automatic polling is controlled by `Enable automatic monitoring`; slot-change email delivery is controlled by `Send email when status changes`. A history row is written only when slots are first found or when the available time list changes. Empty or unchanged results only create query logs. GTS jobs are also consumed by the Worker and appear as `passport_slot_manual` or `passport_slot_automatic`.
+Passport appointment slot monitoring uses the same-origin GTS API flow: authenticate with UID/HAL via `https://scheduling-api.gtspremium.com/authenticate`, then call `/availability7days/` to query 7-day availability. UID/HAL, raw GTS responses, and slot-change history are encrypted at rest. The system normalizes GTS responses into three states: `not_eligible` means the passport is not eligible for appointment yet, `no_slot` means the passport appears eligible but no time is available, and `has_slot` means one or more appointment times were returned. Automatic polling is controlled by `Enable automatic monitoring`; slot-change email delivery is controlled by `Send email when status changes`. Emails are sent for `not_eligible -> no_slot`, `no_slot -> has_slot`, and changed `has_slot` time lists. While in `no_slot`, the scheduler uses China time for a midnight burst: 15-second checks from 23:59 to 00:02, roughly 5-second checks around 23:59:45-00:00:30, and explicit targets for 00:00:00 and 00:00:02. After slots are found, follow-up checks slow from about 30 seconds to 1 minute, then return to the normal 5-10 minute cadence if unchanged. GTS jobs are consumed by the Worker and appear as `passport_slot_manual` or `passport_slot_automatic`.
 
 ## Production Security Baseline
 

@@ -148,7 +148,7 @@ def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None
             [
                 "",
                 "护照预约提醒：你现在可以登录 CEACStatusBot，在该档案详情页填写 UID 或 HAL，开启 GTS 护照预约 slot 监控。",
-                "系统会以 5-10 分钟随机间隔查询可预约时间，并只在发现新 slot 或 slot 时间变化时邮件通知你。",
+                "系统会监控“暂不具备预约资格 / 暂无 slot / 发现 slot”三种状态，并在进入可预约阶段、发现 slot 或 slot 时间变化时邮件通知你。",
                 f"登录入口：{getSettings().appBaseUrl}",
             ],
         )
@@ -162,6 +162,8 @@ def sendPassportSlotNotification(
     *,
     identifierMasked: str,
     fetchedAt: str,
+    slotStatus: str,
+    statusMessage: str,
     slotLines: list[str],
     rawSummary: str,
 ) -> None:
@@ -170,9 +172,11 @@ def sendPassportSlotNotification(
         smtpConfig,
         identifierMasked=identifierMasked,
         fetchedAt=fetchedAt,
+        slotStatus=slotStatus,
+        statusMessage=statusMessage,
         slotLines=slotLines,
         rawSummary=rawSummary,
-        hasSlots=True,
+        hasSlots=slotStatus == "has_slot",
         isTest=False,
     )
 
@@ -183,24 +187,37 @@ def sendPassportSlotStatusEmail(
     *,
     identifierMasked: str,
     fetchedAt: str,
+    slotStatus: str,
+    statusMessage: str,
     slotLines: list[str],
     rawSummary: str,
     hasSlots: bool,
     isTest: bool = False,
 ) -> None:
     subject = f"[GTS] 发现可预约时间：{case['display_name']}"
+    if slotStatus == "no_slot":
+        subject = f"[GTS] 护照已可预约但暂无 slot：{case['display_name']}"
+    elif slotStatus == "not_eligible":
+        subject = f"[GTS] 暂不具备护照预约资格：{case['display_name']}"
     if isTest:
         subject = f"[GTS] 护照预约监控测试：{case['display_name']}"
+    statusLabel = statusMessage or ("发现可预约时间" if hasSlots else "暂无可预约时间")
     lines = [
         f"档案：{case['display_name']}",
         f"申请号：{case['application_num']}",
         f"UID/HAL：{identifierMasked}",
         f"查询时间：{fetchedAt}",
         "",
-        "当前可预约时间：" if hasSlots else "当前状态：暂无可预约时间",
+        f"当前状态：{statusLabel}",
     ]
     if hasSlots:
+        lines.append("")
+        lines.append("当前可预约时间：")
         lines.extend(slotLines or ["接口返回了可用 slot，但未能解析为标准日期字段，请查看下方原始摘要。"])
+    elif slotStatus == "not_eligible":
+        lines.append("这通常表示护照还在签证处/使馆，尚未送达中信银行。系统会继续按常规频率监控。")
+    elif slotStatus == "no_slot":
+        lines.append("这通常表示护照已进入可预约阶段，但当前没有可选时间；系统会继续监控，并在零点附近加密查询。")
     elif isTest:
         lines.append("这是一封测试邮件，用于确认护照预约监控的发信配置可用。")
     if rawSummary:

@@ -24,6 +24,7 @@ from .config import getSettings
 from .database import getConnection, initializeDatabase, utcNowIso
 from .mailer import getSystemSmtpConfigPublic, saveSystemSmtpConfig, sendSystemEmail
 from .passport_slot_service import (
+    enqueueDuePassportSlotMonitors,
     enqueuePassportSlotQuery,
     getPassportSlotMonitor,
     listPassportSlotHistory,
@@ -151,6 +152,15 @@ def runDueCases() -> None:
         print(f"[scheduler] enqueue failed: {exc}")
 
 
+def runDuePassportSlotMonitors() -> None:
+    try:
+        queued = enqueueDuePassportSlotMonitors()
+        if queued:
+            print(f"[scheduler] queued {len(queued)} GTS slot query job(s)")
+    except Exception as exc:
+        print(f"[scheduler] enqueue GTS failed: {exc}")
+
+
 @app.on_event("startup")
 def onStartup() -> None:
     getCredentialMasterKey()
@@ -160,6 +170,7 @@ def onStartup() -> None:
         seedDefaultUsers()
     if not scheduler.running:
         scheduler.add_job(runDueCases, "interval", minutes=1, id="run-due-cases", replace_existing=True)
+        scheduler.add_job(runDuePassportSlotMonitors, "interval", seconds=1, id="run-due-passport-slot-monitors", replace_existing=True)
         scheduler.start()
 
 

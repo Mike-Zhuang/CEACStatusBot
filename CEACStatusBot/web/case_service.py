@@ -9,7 +9,6 @@ from CEACStatusBot.request import query_status
 from .database import getConnection, utcNowIso
 from .mailer import sendCaseNotification, sendIssuedAutoStopNotification
 from .passport_slot_service import (
-    enqueueDuePassportSlotMonitors,
     isPassportSlotTrigger,
     runPassportSlotQuery,
 )
@@ -547,7 +546,6 @@ def enqueueDueCases(limit: int = 20) -> list[dict[str, Any]]:
         job = enqueueCaseQuery(int(row["id"]), "automatic")
         if job:
             queued.append(job)
-    queued.extend(enqueueDuePassportSlotMonitors(limit))
     return queued
 
 

@@ -5,6 +5,7 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -15,8 +16,14 @@ from .secrets import decryptIfNeeded, encryptSecret
 
 GTS_API_BASE_URL = "https://scheduling-api.gtspremium.com"
 GTS_SITE_URL = "https://schedule.gtspremium.com/"
-EMPTY_SLOT_FINGERPRINT = "empty"
 PASSPORT_SLOT_TRIGGER_PREFIX = "passport_slot_"
+PASSPORT_SLOT_STATUS_NOT_ELIGIBLE = "not_eligible"
+PASSPORT_SLOT_STATUS_NO_SLOT = "no_slot"
+PASSPORT_SLOT_STATUS_HAS_SLOT = "has_slot"
+PASSPORT_SLOT_STATUS_UNKNOWN = "unknown"
+PASSPORT_SLOT_STATE_PREFIX = "state:"
+PASSPORT_SLOT_EMPTY_FINGERPRINT = f"{PASSPORT_SLOT_STATE_PREFIX}{PASSPORT_SLOT_STATUS_NO_SLOT}"
+CHINA_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 def normalizeIdentifier(identifier: str) -> str:
@@ -45,15 +52,139 @@ def computeNextPassportSlotCheckAt(
     *,
     isRateLimited: bool = False,
     hadError: bool = False,
+    slotStatus: str | None = None,
+    previousSlotStatus: str | None = None,
+    changed: bool = False,
+    hasSlotStableCount: int = 0,
 ) -> str:
     base = base or datetime.now(UTC)
     if isRateLimited:
         minutes = random.randint(30, 60)
+        return (base + timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
     elif hadError:
         minutes = random.randint(10, 20)
-    else:
-        minutes = random.randint(5, 10)
+        return (base + timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
+    if slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT:
+        if changed or previousSlotStatus != PASSPORT_SLOT_STATUS_HAS_SLOT:
+            return (base + timedelta(seconds=30)).replace(microsecond=0).isoformat()
+        if hasSlotStableCount <= 1:
+            return (base + timedelta(seconds=60)).replace(microsecond=0).isoformat()
+    if slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT:
+        return computeNextNoSlotCheckAt(base).isoformat()
+    minutes = random.randint(5, 10)
     return (base + timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
+
+
+def computeNextNoSlotCheckAt(base: datetime) -> datetime:
+    local = base.astimezone(CHINA_TIMEZONE)
+    currentSeconds = local.hour * 3600 + local.minute * 60 + local.second
+    broadStart = 23 * 3600 + 59 * 60
+    broadEndAfterMidnight = 2 * 60 + 59
+    inBroadWindow = currentSeconds >= broadStart or currentSeconds <= broadEndAfterMidnight
+    if inBroadWindow:
+        targetMidnightDate = local.date()
+        if currentSeconds >= broadStart:
+            targetMidnightDate = (local + timedelta(days=1)).date()
+        targetMidnight = datetime.combine(targetMidnightDate, datetime.min.time(), tzinfo=CHINA_TIMEZONE)
+        coreOffsets = [-15, -10, -5, 0, 2, 5, 10, 15, 20, 25, 30]
+        for target in (targetMidnight + timedelta(seconds=offset) for offset in coreOffsets):
+            if local < target:
+                return target.astimezone(UTC).replace(microsecond=0)
+        return (base + timedelta(seconds=15)).replace(microsecond=0)
+    nextWindowStart = local.replace(hour=23, minute=59, second=0, microsecond=0)
+    if local >= nextWindowStart:
+        nextWindowStart += timedelta(days=1)
+    if nextWindowStart - local <= timedelta(minutes=10):
+        return nextWindowStart.astimezone(UTC).replace(microsecond=0)
+    minutes = random.randint(5, 10)
+    return (base + timedelta(minutes=minutes)).replace(microsecond=0)
+
+
+def passportSlotStatusFromFingerprint(fingerprint: str | None) -> str:
+    value = str(fingerprint or "")
+    if value.startswith(f"{PASSPORT_SLOT_STATE_PREFIX}{PASSPORT_SLOT_STATUS_HAS_SLOT}:"):
+        return PASSPORT_SLOT_STATUS_HAS_SLOT
+    if value == f"{PASSPORT_SLOT_STATE_PREFIX}{PASSPORT_SLOT_STATUS_NOT_ELIGIBLE}":
+        return PASSPORT_SLOT_STATUS_NOT_ELIGIBLE
+    if value in {PASSPORT_SLOT_EMPTY_FINGERPRINT, "empty"}:
+        return PASSPORT_SLOT_STATUS_NO_SLOT
+    if value:
+        return PASSPORT_SLOT_STATUS_HAS_SLOT
+    return PASSPORT_SLOT_STATUS_UNKNOWN
+
+
+def passportSlotStatusFromResult(result: dict[str, Any] | None, fallbackFingerprint: str | None = None) -> str:
+    if isinstance(result, dict):
+        slotStatus = str(result.get("slotStatus") or "")
+        if slotStatus in {PASSPORT_SLOT_STATUS_NOT_ELIGIBLE, PASSPORT_SLOT_STATUS_NO_SLOT, PASSPORT_SLOT_STATUS_HAS_SLOT}:
+            return slotStatus
+    return passportSlotStatusFromFingerprint(fallbackFingerprint)
+
+
+def computePassportSlotFingerprint(slotStatus: str, slots: list[Any]) -> str:
+    if slotStatus == PASSPORT_SLOT_STATUS_NOT_ELIGIBLE:
+        return f"{PASSPORT_SLOT_STATE_PREFIX}{PASSPORT_SLOT_STATUS_NOT_ELIGIBLE}"
+    if slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT:
+        return PASSPORT_SLOT_EMPTY_FINGERPRINT
+    normalized = [stableSlotValue(slot) for slot in slots]
+    normalized.sort(key=lambda item: json.dumps(item, sort_keys=True, ensure_ascii=False))
+    payload = json.dumps(normalized, sort_keys=True, ensure_ascii=False, default=str)
+    return f"{PASSPORT_SLOT_STATE_PREFIX}{PASSPORT_SLOT_STATUS_HAS_SLOT}:{hashlib.sha256(payload.encode()).hexdigest()}"
+
+
+def extractGtsMessage(data: Any) -> str:
+    messages: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            messages.append(value)
+        elif isinstance(value, dict):
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(data)
+    return " ".join(message.strip() for message in messages if message.strip())
+
+
+def classifyAuthFailure(data: dict[str, Any]) -> tuple[str, str]:
+    message = extractGtsMessage(data)
+    normalizedMessage = message.lower()
+    if "invalid_uid" in normalizedMessage or "invalid uid" in normalizedMessage or "无效" in message:
+        return PASSPORT_SLOT_STATUS_UNKNOWN, message or "GTS UID/HAL 无效"
+    if data.get("token") is None:
+        return PASSPORT_SLOT_STATUS_NOT_ELIGIBLE, message or "您没有资格预约。"
+    return PASSPORT_SLOT_STATUS_UNKNOWN, message or "GTS UID/HAL 鉴权失败"
+
+
+def detectNoSlotMessage(data: dict[str, Any]) -> str:
+    message = extractGtsMessage(data)
+    if "目前没有可用的预约" in message:
+        return message
+    normalizedMessage = message.lower()
+    if "no available" in normalizedMessage or "no appointment" in normalizedMessage:
+        return message
+    return ""
+
+
+def formatSlotStatus(slotStatus: str, language: str = "zh") -> str:
+    if language == "en":
+        if slotStatus == PASSPORT_SLOT_STATUS_NOT_ELIGIBLE:
+            return "Not eligible for passport appointment yet"
+        if slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT:
+            return "Eligible, but no available slot"
+        if slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT:
+            return "Available slots found"
+        return "Unknown"
+    if slotStatus == PASSPORT_SLOT_STATUS_NOT_ELIGIBLE:
+        return "暂不具备预约资格"
+    if slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT:
+        return "已可预约但暂无 slot"
+    if slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT:
+        return "发现可预约时间"
+    return "未知状态"
 
 
 def normalizePassportSlotMonitor(row: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -209,12 +340,7 @@ def stableSlotValue(slot: Any) -> Any:
 
 
 def computeSlotFingerprint(slots: list[Any]) -> str:
-    if not slots:
-        return EMPTY_SLOT_FINGERPRINT
-    normalized = [stableSlotValue(slot) for slot in slots]
-    normalized.sort(key=lambda item: json.dumps(item, sort_keys=True, ensure_ascii=False))
-    payload = json.dumps(normalized, sort_keys=True, ensure_ascii=False, default=str)
-    return hashlib.sha256(payload.encode()).hexdigest()
+    return computePassportSlotFingerprint(PASSPORT_SLOT_STATUS_HAS_SLOT if slots else PASSPORT_SLOT_STATUS_NO_SLOT, slots)
 
 
 def formatSlotLines(slots: list[Any]) -> list[str]:
@@ -283,7 +409,18 @@ def fetchPassportSlotAvailability(identifier: str) -> dict[str, Any]:
             return {"success": False, "rateLimited": True, "error": "GTS 请求被限流", "raw": authData}
         token = authData.get("token") if isinstance(authData, dict) else None
         if not token:
-            return {"success": False, "rateLimited": False, "error": errorFromAuthResponse(authData), "raw": authData}
+            slotStatus, authError = classifyAuthFailure(authData)
+            if slotStatus == PASSPORT_SLOT_STATUS_NOT_ELIGIBLE:
+                return {
+                    "success": True,
+                    "rateLimited": False,
+                    "slotStatus": PASSPORT_SLOT_STATUS_NOT_ELIGIBLE,
+                    "statusMessage": authError or "您没有资格预约。",
+                    "availableSlots": [],
+                    "availableDates": [],
+                    "raw": authData,
+                }
+            return {"success": False, "rateLimited": False, "error": authError or errorFromAuthResponse(authData), "raw": authData}
         availabilityResponse = client.get(
             f"{GTS_API_BASE_URL}/availability7days/",
             headers={**headers, "Authorization": str(token)},
@@ -295,9 +432,13 @@ def fetchPassportSlotAvailability(identifier: str) -> dict[str, Any]:
         if isRateLimitedResponse(availabilityData, availabilityResponse.status_code):
             return {"success": False, "rateLimited": True, "error": "GTS slot 查询被限流", "raw": availabilityData}
         slots = normalizeSlots(availabilityData)
+        slotStatus = PASSPORT_SLOT_STATUS_HAS_SLOT if slots else PASSPORT_SLOT_STATUS_NO_SLOT
+        statusMessage = detectNoSlotMessage(availabilityData)
         return {
             "success": True,
             "rateLimited": False,
+            "slotStatus": slotStatus,
+            "statusMessage": statusMessage or ("发现可预约时间。" if slots else "目前没有可用的预约，请稍后再试。"),
             "availableSlots": slots,
             "availableDates": availabilityData.get("availableDates", slots),
             "raw": availabilityData,
@@ -324,8 +465,14 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
     if not row:
         raise RuntimeError("护照预约监控不存在")
     identifier = decryptIfNeeded(row["identifier_encrypted"]) or ""
+    previousResultJson = decryptIfNeeded(row.get("last_result_json") or "") or ""
+    previousResult = json.loads(previousResultJson) if previousResultJson else {}
+    previousFingerprint = row["last_slot_fingerprint"] or ""
+    previousSlotStatus = passportSlotStatusFromResult(previousResult if isinstance(previousResult, dict) else {}, previousFingerprint)
     slots: list[Any] = []
-    fingerprint = row["last_slot_fingerprint"] or ""
+    slotStatus = previousSlotStatus
+    statusMessage = ""
+    fingerprint = previousFingerprint
     notificationSent = False
 
     try:
@@ -335,7 +482,9 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
             errorMessage = str(result.get("error") or "GTS slot 查询失败")
         else:
             slots = normalizeSlots(result)
-            fingerprint = computeSlotFingerprint(slots)
+            slotStatus = passportSlotStatusFromResult(result, computeSlotFingerprint(slots))
+            statusMessage = str(result.get("statusMessage") or formatSlotStatus(slotStatus))
+            fingerprint = computePassportSlotFingerprint(slotStatus, slots)
     except Exception as exc:
         errorMessage = str(exc)
         result = {"success": False, "error": errorMessage, "rateLimited": False}
@@ -343,10 +492,23 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
     finished = datetime.now(UTC)
     finishedIso = finished.replace(microsecond=0).isoformat()
     durationMs = int((finished - started).total_seconds() * 1000)
-    previousFingerprint = row["last_slot_fingerprint"] or ""
     hasSlot = bool(slots)
     changed = success and fingerprint != previousFingerprint
-    shouldNotify = success and hasSlot and fingerprint != previousFingerprint and bool(row["email_notifications_enabled"])
+    previousStableCount = int(previousResult.get("hasSlotStableCount") or 0) if isinstance(previousResult, dict) else 0
+    hasSlotStableCount = previousStableCount + 1 if success and slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT and previousSlotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT and not changed else 0
+    if success:
+        result["slotStatus"] = slotStatus
+        result["statusMessage"] = statusMessage or formatSlotStatus(slotStatus)
+        result["slotFingerprint"] = fingerprint
+        result["hasSlotStableCount"] = hasSlotStableCount
+    shouldNotify = (
+        success
+        and bool(row["email_notifications_enabled"])
+        and (
+            (slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT and previousSlotStatus == PASSPORT_SLOT_STATUS_NOT_ELIGIBLE and changed)
+            or (slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT and (previousSlotStatus in {PASSPORT_SLOT_STATUS_UNKNOWN, PASSPORT_SLOT_STATUS_NO_SLOT} or changed))
+        )
+    )
 
     with getConnection() as connection:
         if shouldNotify:
@@ -361,6 +523,8 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
                     smtpConfig,
                     identifierMasked=maskIdentifier(identifier),
                     fetchedAt=finishedIso,
+                    slotStatus=slotStatus,
+                    statusMessage=statusMessage or formatSlotStatus(slotStatus),
                     slotLines=formatSlotLines(slots),
                     rawSummary=summarizePayload(result.get("raw") if isinstance(result.get("raw"), dict) else result),
                 )
@@ -386,7 +550,15 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
                 ),
             )
         nextCheckAt = (
-            computeNextPassportSlotCheckAt(finished, isRateLimited=bool(result.get("rateLimited")), hadError=not success)
+            computeNextPassportSlotCheckAt(
+                finished,
+                isRateLimited=bool(result.get("rateLimited")),
+                hadError=not success,
+                slotStatus=slotStatus,
+                previousSlotStatus=previousSlotStatus,
+                changed=changed,
+                hasSlotStableCount=hasSlotStableCount,
+            )
             if bool(row["is_enabled"])
             else None
         )
@@ -420,6 +592,7 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
         "changed": changed,
         "notified": notificationSent,
         "slotCount": len(slots),
+        "slotStatus": slotStatus,
         "error": errorMessage,
         "result": result,
     }
@@ -448,6 +621,8 @@ def sendCurrentPassportSlotEmail(caseId: int, userId: int | None = None) -> dict
     resultJson = decryptIfNeeded(row.get("last_result_json") or "") or ""
     result = json.loads(resultJson) if resultJson else {}
     slots = normalizeSlots(result) if isinstance(result, dict) else []
+    slotStatus = passportSlotStatusFromResult(result if isinstance(result, dict) else {}, row["last_slot_fingerprint"])
+    statusMessage = str(result.get("statusMessage") or formatSlotStatus(slotStatus)) if isinstance(result, dict) else formatSlotStatus(slotStatus)
     rawSummary = summarizePayload(result) if result else (row["last_error_message"] or "尚未执行过 GTS slot 查询。")
     case = {
         "display_name": row["display_name"],
@@ -461,6 +636,8 @@ def sendCurrentPassportSlotEmail(caseId: int, userId: int | None = None) -> dict
             smtpConfig,
             identifierMasked=maskIdentifier(identifier),
             fetchedAt=row["last_checked_at"] or utcNowIso(),
+            slotStatus=slotStatus,
+            statusMessage=statusMessage,
             slotLines=formatSlotLines(slots),
             rawSummary=rawSummary,
             hasSlots=bool(slots),
