@@ -19,7 +19,7 @@ This project is a modified version released under the GPLv3 license. It preserve
 - FastAPI backend, SQLite database, APScheduler queue scheduler, and a standalone Worker for query jobs.
 - React + Vite + TypeScript frontend console with dark/light themes and Chinese/English language switching.
 - Open registration with email verification for both signup and password reset.
-- Standard accounts can create 1 CEAC profile, run 1 manual query per day, and use a limited daily email quota. Premium accounts can create 5 profiles and use high query/email quotas. Admins are exempt.
+- Standard accounts can create 1 CEAC profile, and automatic checks still run about once per hour; after `Issued`, checks slow to once per day and stop after one week. Standard accounts get 1 manual refresh per day and a limited daily email quota. Premium accounts can create 5 profiles and use high query/email quotas. Admins are exempt.
 - Enabled profiles are queued once per hour at a random minute. After a profile enters `Issued`, automatic CEAC checks slow down to once per day and stop automatically after one week.
 - When a CEAC profile enters `Approved` or `Issued`, status emails invite the user to enter UID/HAL and enable GTS passport appointment slot monitoring.
 - GTS passport appointment monitoring is bound to a CEAC profile. It polls at a random 5-10 minute interval by default, with separate switches for automatic polling and slot-change email notifications. Once slots are found, polling slows to roughly once per hour until the user confirms they have booked and stops monitoring.
