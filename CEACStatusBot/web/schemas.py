@@ -4,7 +4,7 @@ import re
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
-TEXT_PATTERN = re.compile(r"^[\w\s.\-:/#()@+|]+$", re.UNICODE)
+TEXT_PATTERN = re.compile(r"^[\w\s.,'\`\-:/#()@+|]+$", re.UNICODE)
 IDENTIFIER_PATTERN = re.compile(r"^(HAL[A-Z0-9]{6,24}|[A-Z0-9]{6,20})$")
 APPLICATION_PATTERN = re.compile(r"^[A-Z0-9\-_ ]{3,40}$")
 PASSPORT_PATTERN = re.compile(r"^(NA|[A-Z0-9]{3,32})$")
