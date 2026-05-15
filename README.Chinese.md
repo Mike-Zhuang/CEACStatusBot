@@ -87,6 +87,7 @@ npm run dev
 | `STANDARD_API_LIMIT_PER_MINUTE`                 | `120`                                         | 普通账号每分钟已登录 API 上限                                                                   |
 | `PREMIUM_API_LIMIT_PER_MINUTE`                  | `300`                                         | Premium 账号每分钟已登录 API 上限                                                               |
 | `ADMIN_API_LIMIT_PER_MINUTE`                    | `600`                                         | 管理员每分钟已登录 API 上限                                                                     |
+| `QUERY_JOB_TIMEOUT_SECONDS`                     | `180`                                         | 查询任务开始运行后超过该秒数才标记为失败；排队等待时间不计入超时                                |
 | `WORKER_POLL_INTERVAL_SECONDS`                  | `1`                                           | Worker 轮询 SQLite 队列间隔；GTS 零点加频任务需要秒级拾取                                       |
 | `STANDARD_DAILY_MANUAL_QUERY_LIMIT`             | `1`                                           | 普通账号每天可发起的 CEAC/GTS 手动查询次数                                                      |
 | `PREMIUM_DAILY_MANUAL_QUERY_LIMIT`              | `1000`                                        | Premium 账号每天可发起的 CEAC/GTS 手动查询次数                                                  |

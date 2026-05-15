@@ -230,6 +230,8 @@ function createEmptyCaseForm(defaultEmail = ""): CaseForm {
 }
 
 const icpRecordNumber = import.meta.env.VITE_ICP_RECORD_NUMBER as string | undefined;
+const QUERY_JOB_POLL_INTERVAL_MS = 2000;
+const QUERY_JOB_QUEUE_WAIT_MS = 180000;
 
 const translations = {
   en: {
@@ -601,6 +603,23 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
     throw new Error(payload.detail ?? "Request failed");
   }
   return payload as T;
+}
+
+async function waitForQueryJob(jobId: number): Promise<QueryJob | null> {
+  let job: QueryJob | null = null;
+  const queueWaitStartedAt = Date.now();
+  while (true) {
+    const jobPayload = await requestJson<{ job: QueryJob }>(`/api/query-jobs/${jobId}`);
+    job = jobPayload.job;
+    if (job.status === "succeeded" || job.status === "failed") {
+      break;
+    }
+    if (job.status === "queued" && Date.now() - queueWaitStartedAt >= QUERY_JOB_QUEUE_WAIT_MS) {
+      break;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, QUERY_JOB_POLL_INTERVAL_MS));
+  }
+  return job;
 }
 
 function getInitialTheme(): ThemeMode {
@@ -1010,15 +1029,7 @@ export function App() {
         method: "POST",
         body: "{}",
       });
-      let job: QueryJob | null = null;
-      for (let index = 0; index < 60; index += 1) {
-        const jobPayload = await requestJson<{ job: QueryJob }>(`/api/query-jobs/${payload.jobId}`);
-        job = jobPayload.job;
-        if (job.status === "succeeded" || job.status === "failed") {
-          break;
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
-      }
+      const job = await waitForQueryJob(payload.jobId);
       await loadCases();
       await loadHistory(caseId);
       if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
@@ -1174,15 +1185,7 @@ export function App() {
         method: "POST",
         body: "{}",
       });
-      let job: QueryJob | null = null;
-      for (let index = 0; index < 60; index += 1) {
-        const jobPayload = await requestJson<{ job: QueryJob }>(`/api/query-jobs/${payload.jobId}`);
-        job = jobPayload.job;
-        if (job.status === "succeeded" || job.status === "failed") {
-          break;
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
-      }
+      const job = await waitForQueryJob(payload.jobId);
       await loadPassportSlotMonitor(caseId);
       await loadCases();
       if (!job || (job.status !== "succeeded" && job.status !== "failed")) {

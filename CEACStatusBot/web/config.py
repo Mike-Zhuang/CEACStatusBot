@@ -62,6 +62,7 @@ class Settings:
         self.standardApiLimitPerMinute = max(1, int(os.getenv("STANDARD_API_LIMIT_PER_MINUTE", "120")))
         self.premiumApiLimitPerMinute = max(1, int(os.getenv("PREMIUM_API_LIMIT_PER_MINUTE", "300")))
         self.adminApiLimitPerMinute = max(1, int(os.getenv("ADMIN_API_LIMIT_PER_MINUTE", "600")))
+        self.queryJobTimeoutSeconds = max(30, int(os.getenv("QUERY_JOB_TIMEOUT_SECONDS", "180")))
         self.workerPollIntervalSeconds = max(1, int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "1")))
         self.standardDailyManualQueryLimit = max(1, int(os.getenv("STANDARD_DAILY_MANUAL_QUERY_LIMIT", "1")))
         self.premiumDailyManualQueryLimit = max(1, int(os.getenv("PREMIUM_DAILY_MANUAL_QUERY_LIMIT", "1000")))

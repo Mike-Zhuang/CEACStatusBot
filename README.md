@@ -101,6 +101,7 @@ Open `http://127.0.0.1:5173`. VS Code debug configuration lives in `.vscode/laun
 | `STANDARD_API_LIMIT_PER_MINUTE` | `120` | Authenticated API limit for standard accounts |
 | `PREMIUM_API_LIMIT_PER_MINUTE` | `300` | Authenticated API limit for Premium accounts |
 | `ADMIN_API_LIMIT_PER_MINUTE` | `600` | Authenticated API limit for admins |
+| `QUERY_JOB_TIMEOUT_SECONDS` | `180` | Marks running query jobs as failed after this many seconds. Queue wait time does not count |
 | `WORKER_POLL_INTERVAL_SECONDS` | `1` | Worker polling interval for the SQLite job queue. GTS midnight burst jobs need second-level pickup |
 | `STANDARD_DAILY_MANUAL_QUERY_LIMIT` | `1` | Daily CEAC/GTS manual query limit for standard accounts |
 | `PREMIUM_DAILY_MANUAL_QUERY_LIMIT` | `1000` | Daily CEAC/GTS manual query limit for Premium accounts |

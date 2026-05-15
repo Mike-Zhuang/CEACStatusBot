@@ -6,6 +6,7 @@ from typing import Any
 
 from CEACStatusBot.request import query_status
 
+from .config import getSettings
 from .database import getConnection, utcNowIso
 from .mailer import sendCaseNotification, sendIssuedAutoStopNotification
 from .passport_slot_service import (
@@ -21,6 +22,10 @@ STANDARD_CASE_LIMIT = 1
 PREMIUM_CASE_LIMIT = 5
 STANDARD_WORKER_PRIORITY = 100
 PREMIUM_WORKER_PRIORITY = 50
+QUERY_TIMEOUT_ERROR_MESSAGE = (
+    "查询超过 3 分钟仍未完成，已标记为失败。可能是信息填写有误、CEAC/GTS 服务暂时异常或服务器繁忙；"
+    "请核对信息输入是否正确后重试，仍有问题请联系管理员。"
+)
 
 
 def isIssuedStatus(status: str | None) -> bool:
@@ -705,6 +710,7 @@ def stopIssuedCaseIfExpired(caseId: int, now: datetime, issuedAt: datetime | Non
 
 
 def getQueryJob(jobId: int, userId: int | None = None) -> dict[str, Any] | None:
+    failTimedOutQueryJobs()
     params: tuple[Any, ...] = (jobId,)
     userFilter = ""
     if userId is not None:
@@ -723,7 +729,37 @@ def getQueryJob(jobId: int, userId: int | None = None) -> dict[str, Any] | None:
     return normalizeQueryJob(row) if row else None
 
 
+def failTimedOutQueryJobs(now: datetime | None = None) -> int:
+    now = now or datetime.now(UTC)
+    timeoutAt = (now - timedelta(seconds=getSettings().queryJobTimeoutSeconds)).replace(microsecond=0).isoformat()
+    nowIso = now.replace(microsecond=0).isoformat()
+    result = {"success": False, "changed": False, "error": QUERY_TIMEOUT_ERROR_MESSAGE, "timeout": True}
+    with getConnection() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE query_jobs
+            SET status = 'failed',
+                error_message = ?,
+                result_json = ?,
+                finished_at = ?,
+                updated_at = ?
+            WHERE status = 'running'
+              AND started_at IS NOT NULL
+              AND started_at <= ?
+            """,
+            (
+                QUERY_TIMEOUT_ERROR_MESSAGE,
+                encryptSecret(json.dumps(result, ensure_ascii=False)),
+                nowIso,
+                nowIso,
+                timeoutAt,
+            ),
+        )
+    return int(cursor.rowcount)
+
+
 def claimNextQueryJob(workerId: str | None = None) -> dict[str, Any] | None:
+    failTimedOutQueryJobs()
     workerId = workerId or f"worker-{uuid.uuid4()}"
     nowIso = utcNowIso()
     with getConnection() as connection:
@@ -771,7 +807,7 @@ def runQueryJob(job: dict[str, Any]) -> dict[str, Any]:
             """
             UPDATE query_jobs
             SET status = ?, error_message = ?, result_json = ?, finished_at = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND status = 'running'
             """,
             (
                 status,

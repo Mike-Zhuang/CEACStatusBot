@@ -2,7 +2,7 @@ import signal
 import time
 import uuid
 
-from .case_service import claimNextQueryJob, migrateEncryptedFields, runQueryJob
+from .case_service import claimNextQueryJob, failTimedOutQueryJobs, migrateEncryptedFields, runQueryJob
 from .config import getSettings
 from .database import initializeDatabase
 from .secrets import getCredentialMasterKey
@@ -26,6 +26,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, handleStopSignal)
     print(f"[worker] started {workerId}")
     while not shouldStop:
+        failTimedOutQueryJobs()
         job = claimNextQueryJob(workerId)
         if not job:
             time.sleep(settings.workerPollIntervalSeconds)
