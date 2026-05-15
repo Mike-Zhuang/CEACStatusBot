@@ -266,6 +266,7 @@ function createEmptyCaseForm(defaultEmail = ""): CaseForm {
 const icpRecordNumber = import.meta.env.VITE_ICP_RECORD_NUMBER as string | undefined;
 const QUERY_JOB_POLL_INTERVAL_MS = 2000;
 const QUERY_JOB_QUEUE_WAIT_MS = 180000;
+const ADMIN_QUEUE_REFRESH_INTERVAL_MS = 3000;
 const USER_TERMS_VERSION_LABEL = "2026-05-15";
 
 const legalTerms = {
@@ -1063,6 +1064,36 @@ export function App() {
     });
   }
 
+  async function loadAdminQueueData() {
+    const jobsPayload = await requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[] }>("/api/admin/query-jobs");
+    setQueryJobs(jobsPayload.jobs);
+    setScheduledQueryJobs(jobsPayload.scheduledJobs);
+  }
+
+  useEffect(() => {
+    if (user?.role !== "admin" || viewMode !== "admin") {
+      return undefined;
+    }
+    let isCancelled = false;
+    const refreshQueue = async () => {
+      try {
+        const jobsPayload = await requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[] }>("/api/admin/query-jobs");
+        if (!isCancelled) {
+          setQueryJobs(jobsPayload.jobs);
+          setScheduledQueryJobs(jobsPayload.scheduledJobs);
+        }
+      } catch {
+        // 轻量自动刷新失败时保持当前画面，下一轮继续尝试。
+      }
+    };
+    void refreshQueue();
+    const timer = window.setInterval(refreshQueue, ADMIN_QUEUE_REFRESH_INTERVAL_MS);
+    return () => {
+      isCancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [user?.role, viewMode]);
+
   async function saveSystemEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
@@ -1702,6 +1733,7 @@ export function App() {
               onClick={() => {
                 setViewMode("admin");
                 void loadAdminData();
+                void loadAdminQueueData();
               }}
             >
               <Shield size={16} /> {t("admin")}
@@ -2353,6 +2385,11 @@ function AdminPanel(props: {
   const [collapsedAdminUsers, setCollapsedAdminUsers] = useState<Record<number, boolean>>({});
   const [collapsedLogUsers, setCollapsedLogUsers] = useState<Record<string, boolean>>({});
   const [collapsedSecurityActors, setCollapsedSecurityActors] = useState<Record<string, boolean>>({});
+  const [queueClockMs, setQueueClockMs] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setQueueClockMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   const casesByUserId = useMemo(() => {
     const grouped = new Map<number, CeacCase[]>();
     for (const item of props.cases) {
@@ -2388,6 +2425,21 @@ function AdminPanel(props: {
   };
   const toggleSecurityActor = (actor: string) => {
     setCollapsedSecurityActors((current) => ({ ...current, [actor]: !(current[actor] ?? true) }));
+  };
+  const currentJobWaitSeconds = (job: AdminQueryJob) => {
+    const baseValue = job.status === "running" ? job.started_at : job.created_at;
+    const baseMs = baseValue ? Date.parse(baseValue) : Number.NaN;
+    if (Number.isNaN(baseMs)) {
+      return job.wait_seconds;
+    }
+    return Math.max(0, Math.floor((queueClockMs - baseMs) / 1000));
+  };
+  const scheduledJobSecondsUntilQueue = (job: AdminScheduledQueryJob) => {
+    const nextMs = Date.parse(job.next_check_at);
+    if (Number.isNaN(nextMs)) {
+      return job.seconds_until_queue;
+    }
+    return Math.max(0, Math.ceil((nextMs - queueClockMs) / 1000));
   };
   return (
     <div className="stack">
@@ -2555,7 +2607,6 @@ function AdminPanel(props: {
       <section className="panel">
         <div className="panel-title">
           <h2 className="headline">{props.t("workerQueue")}</h2>
-          <button className="button secondary" onClick={props.reload}>{props.t("refresh")}</button>
         </div>
         <h3 className="subhead compact-heading">{props.t("workerQueueCurrent")}</h3>
         {props.queryJobs.length > 0 ? (
@@ -2588,7 +2639,7 @@ function AdminPanel(props: {
                       <span className={`status-badge ${job.status === "running" ? "success" : ""}`}>{job.status}</span>
                     </td>
                     <td>{formatTime(job.created_at, props.languageMode)}</td>
-                    <td className="mono-text">{formatDurationSeconds(job.wait_seconds)}</td>
+                    <td className="mono-text">{formatDurationSeconds(currentJobWaitSeconds(job))}</td>
                     <td className="mono-text">{job.locked_by || "-"}</td>
                   </tr>
                 ))}
@@ -2625,7 +2676,7 @@ function AdminPanel(props: {
                     <td>{formatTriggerType(job.trigger_type, props.t)}</td>
                     <td className="mono-text">{job.worker_priority}</td>
                     <td>{formatTime(job.next_check_at, props.languageMode)}</td>
-                    <td className="mono-text">{formatDurationSeconds(job.seconds_until_queue)}</td>
+                    <td className="mono-text">{formatDurationSeconds(scheduledJobSecondsUntilQueue(job))}</td>
                   </tr>
                 ))}
               </tbody>
