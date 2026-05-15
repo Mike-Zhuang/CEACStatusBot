@@ -8,6 +8,7 @@ from CEACStatusBot.captcha import CaptchaHandle, OnnxCaptchaHandle
 
 ROOT = "https://ceac.state.gov"
 REQUEST_TIMEOUT = (10, 45)
+MAX_ATTEMPTS = 5
 
 
 def build_ceac_url(path: str) -> str:
@@ -17,16 +18,57 @@ def build_ceac_url(path: str) -> str:
         raise ValueError("Unexpected CEAC request target")
     return url
 
+
+def build_failure(error_code, error, attempts, *, detail=""):
+    return {
+        "success": False,
+        "error_code": error_code,
+        "error": error,
+        "attempts": attempts,
+        "detail": detail,
+    }
+
+
+def extract_page_error(soup):
+    candidates = []
+    for selector in [
+        "#ctl00_ContentPlaceHolder1_ValidationSummary1",
+        "#ctl00_ContentPlaceHolder1_lblError",
+        ".validation-summary-errors",
+        ".field-validation-error",
+        ".error",
+    ]:
+        node = soup.select_one(selector)
+        if node:
+            text = " ".join(node.get_text(" ", strip=True).split())
+            if text:
+                candidates.append(text)
+    for text in candidates:
+        lower = text.lower()
+        if "captcha" in lower:
+            return "CEAC 验证码校验失败，系统会在下次查询时重新尝试。"
+        if "case" in lower or "application" in lower or "passport" in lower or "surname" in lower:
+            return "CEAC 提示申请号、护照号、姓氏或办理地点信息不匹配，请核对档案信息。"
+        return f"CEAC 返回错误提示：{text[:160]}"
+    return ""
+
+
+def read_span_text(soup, span_id):
+    node = soup.find("span", id=span_id)
+    return node.get_text(strip=True) if node else ""
+
+
 def query_status(location, application_num, passport_number, surname, captchaHandle: CaptchaHandle = OnnxCaptchaHandle("captcha.onnx")):
     failCount = 0
     result = {
         "success": False,
     }
+    lastFailure = build_failure("unknown", "CEAC 查询失败，请稍后重试。", 0)
     backupTime = 5
 
-    while failCount < 5:
+    while failCount < MAX_ATTEMPTS:
         if failCount > 0:
-            print(f"Retrying... Attempt {failCount + 1} / 5 in {backupTime} seconds")
+            print(f"Retrying... Attempt {failCount + 1} / {MAX_ATTEMPTS} in {backupTime} seconds")
             time.sleep(backupTime)
         failCount += 1
         headers = {
@@ -49,21 +91,61 @@ def query_status(location, application_num, passport_number, surname, captchaHan
             )
         except Exception as e:
             print(e)
+            lastFailure = build_failure(
+                "ceac_initial_request_failed",
+                "CEAC 首页请求失败，可能是 CEAC 官网临时不可用、网络波动或服务器出口连接异常。",
+                failCount,
+                detail=str(e),
+            )
             continue
 
         soup = BeautifulSoup(r.text, features="lxml")
 
         # Find captcha image
         captcha = soup.find(name="img", id="c_status_ctl00_contentplaceholder1_defaultcaptcha_CaptchaImage")
+        if not captcha or not captcha.get("src"):
+            lastFailure = build_failure(
+                "ceac_captcha_image_missing",
+                "CEAC 页面未返回验证码图片，可能是官网页面结构变化、维护中或被临时拦截。",
+                failCount,
+            )
+            continue
         image_url = build_ceac_url(captcha["src"])
-        img_resp = session.get(image_url, timeout=REQUEST_TIMEOUT)
+        try:
+            img_resp = session.get(image_url, timeout=REQUEST_TIMEOUT)
+        except Exception as e:
+            print(e)
+            lastFailure = build_failure(
+                "ceac_captcha_request_failed",
+                "CEAC 验证码图片请求失败，可能是官网临时不可用或网络波动。",
+                failCount,
+                detail=str(e),
+            )
+            continue
 
         # Resolve captcha
-        captcha_num = captchaHandle.solve(img_resp.content)
+        try:
+            captcha_num = captchaHandle.solve(img_resp.content)
+        except Exception as e:
+            print(e)
+            lastFailure = build_failure(
+                "ceac_captcha_solve_failed",
+                "CEAC 验证码识别失败，可能是验证码图片异常或识别模型无法处理当前验证码。",
+                failCount,
+                detail=str(e),
+            )
+            continue
         print(f"Captcha solved: {captcha_num}")
 
         # Find the correct value for the location dropdown
         location_dropdown = soup.find("select", id="Location_Dropdown")
+        if not location_dropdown:
+            lastFailure = build_failure(
+                "ceac_location_dropdown_missing",
+                "CEAC 页面未返回办理地点下拉框，可能是官网页面结构变化或临时异常。",
+                failCount,
+            )
+            continue
         location_value = None
         for option in location_dropdown.find_all("option"):
             if location in option.text:
@@ -72,7 +154,11 @@ def query_status(location, application_num, passport_number, surname, captchaHan
 
         if not location_value:
             print("Location not found in dropdown options.")
-            return {"success": False}
+            return build_failure(
+                "ceac_location_not_found",
+                "CEAC 办理地点匹配失败，请确认档案中选择的办理地点是否仍在 CEAC 官网列表中。",
+                failCount,
+            )
 
         # Fill form
         def update_from_current_page(cur_page, name, data):
@@ -117,20 +203,44 @@ def query_status(location, application_num, passport_number, surname, captchaHan
             )
         except Exception as e:
             print(e)
+            lastFailure = build_failure(
+                "ceac_submit_request_failed",
+                "CEAC 表单提交失败，可能是 CEAC 官网临时不可用、网络波动或服务器出口连接异常。",
+                failCount,
+                detail=str(e),
+            )
             continue
 
         soup = BeautifulSoup(r.text, features="lxml")
         status_tag = soup.find("span", id="ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblStatus")
         if not status_tag:
+            pageError = extract_page_error(soup)
+            lastFailure = build_failure(
+                "ceac_status_not_returned",
+                pageError or "CEAC 未返回状态结果，可能是验证码识别失败、申请信息不匹配、官网临时异常或页面结构变化。",
+                failCount,
+            )
             continue
 
-        application_num_returned = soup.find("span", id="ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblCaseNo").string
-        assert application_num_returned == application_num
-        status = status_tag.string
-        visa_type = soup.find("span", id="ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblAppName").string
-        case_created = soup.find("span", id="ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblSubmitDate").string
-        case_last_updated = soup.find("span", id="ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblStatusDate").string
-        description = soup.find("span", id="ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblMessage").string
+        application_num_returned = read_span_text(soup, "ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblCaseNo")
+        if application_num_returned != application_num:
+            return build_failure(
+                "ceac_application_number_mismatch",
+                "CEAC 返回的申请号与档案申请号不一致，请核对 Application ID 或 Case Number。",
+                failCount,
+            )
+        status = status_tag.get_text(strip=True)
+        visa_type = read_span_text(soup, "ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblAppName")
+        case_created = read_span_text(soup, "ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblSubmitDate")
+        case_last_updated = read_span_text(soup, "ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblStatusDate")
+        description = read_span_text(soup, "ctl00_ContentPlaceHolder1_ucApplicationStatusView_lblMessage")
+        if not status:
+            lastFailure = build_failure(
+                "ceac_status_empty",
+                "CEAC 返回了状态区域，但状态字段为空，可能是官网页面结构变化或临时异常。",
+                failCount,
+            )
+            continue
 
         result.update({
             "success": True,
@@ -145,4 +255,4 @@ def query_status(location, application_num, passport_number, surname, captchaHan
         })
         break
 
-    return result
+    return result if result.get("success") else lastFailure

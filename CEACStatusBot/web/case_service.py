@@ -348,7 +348,7 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
     try:
         result = query_status(case["location"], case["application_num"], case["passport_number"], case["surname"])
         if not result.get("success"):
-            raise RuntimeError("CEAC 查询失败")
+            raise RuntimeError(str(result.get("error") or "CEAC 查询失败"))
         success = True
     except Exception as exc:
         errorMessage = str(exc)
