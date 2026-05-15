@@ -102,7 +102,7 @@ Open `http://127.0.0.1:5173`. VS Code debug configuration lives in `.vscode/laun
 | `STANDARD_API_LIMIT_PER_MINUTE` | `120` | Authenticated API limit for standard accounts |
 | `PREMIUM_API_LIMIT_PER_MINUTE` | `300` | Authenticated API limit for Premium accounts |
 | `ADMIN_API_LIMIT_PER_MINUTE` | `600` | Authenticated API limit for admins |
-| `QUERY_JOB_TIMEOUT_SECONDS` | `180` | Marks running query jobs as failed after this many seconds. Queue wait time does not count |
+| `QUERY_JOB_TIMEOUT_SECONDS` | `360` | Marks running query jobs as failed after this many seconds. Queue wait time does not count |
 | `WORKER_POLL_INTERVAL_SECONDS` | `1` | Worker polling interval for the SQLite job queue. GTS midnight burst jobs need second-level pickup |
 | `STANDARD_DAILY_MANUAL_QUERY_LIMIT` | `1` | Daily CEAC/GTS manual query limit for standard accounts |
 | `PREMIUM_DAILY_MANUAL_QUERY_LIMIT` | `1000` | Daily CEAC/GTS manual query limit for Premium accounts |
@@ -128,7 +128,7 @@ The current web application only needs SMTP. IMAP is not used for status queryin
 
 Each enabled visa profile stores `nextCheckAt`. The scheduler scans due profiles every minute and writes automatic query jobs into the SQLite queue. The standalone Worker consumes the queue, calls CEAC, records query logs, updates status history, and sends email notifications.
 
-Creating an enabled profile automatically queues one initial CEAC query, and this initial automatic query does not consume the daily manual quota. `Query now` does not run the scraper directly in the web process. It creates a `manual` job and returns a job ID. The frontend polls job status, then refreshes the profile and status timeline. CEAC `Query now` and GTS `Check slots now` share the same daily manual query quota: Standard accounts default to 1 per day, Premium accounts default to 1000 per day, and admin accounts are exempt. CEAC/GTS business emails also have daily account-level quotas: Standard defaults to 5 per day and Premium defaults to 1000 per day. Worker priority uses smaller numbers first; Premium defaults to 50 and Standard defaults to 100, while admins can override either value.
+Creating an enabled profile automatically queues one initial CEAC query, and this initial automatic query does not consume the daily manual quota. `Query now` does not run the scraper directly in the web process. It creates a `manual` job and returns a job ID. The frontend polls job status, then refreshes the profile and status timeline. CEAC failure messages are shown on the profile detail page so users can tell whether they should check their inputs or retry later because CEAC is slow. CEAC `Query now` and GTS `Check slots now` share the same daily manual query quota: Standard accounts default to 1 per day, Premium accounts default to 1000 per day, and admin accounts are exempt. CEAC/GTS business emails also have daily account-level quotas: Standard defaults to 5 per day and Premium defaults to 1000 per day. Worker priority uses smaller numbers first; Premium defaults to 50 and Standard defaults to 100, while admins can override either value.
 
 The system compares the latest history item with the current CEAC result:
 

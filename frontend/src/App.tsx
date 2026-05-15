@@ -51,6 +51,7 @@ interface CeacCase {
   lastTriggerType: "manual" | "automatic" | "unknown" | null;
   lastStatus: string | null;
   lastDescription: string | null;
+  lastCeacError: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -274,6 +275,7 @@ const translations = {
     forgotPassword: "Forgot password?",
     lastCheckMode: "Last query mode",
     lastCheckedAt: "Last updated",
+    lastCeacError: "Latest CEAC query issue",
     lastQuery: "Last query",
     location: "Select a location",
     locationMetric: "Location",
@@ -450,6 +452,7 @@ const translations = {
     forgotPassword: "忘记密码？",
     lastCheckMode: "上次抓取方式",
     lastCheckedAt: "上次更新时间",
+    lastCeacError: "最近 CEAC 查询问题",
     lastQuery: "最近查询",
     location: "选择面签地点",
     locationMetric: "办理地点",
@@ -1560,6 +1563,11 @@ export function App() {
                       {selectedCase.ceacAutoLockedByPassportSlot && (
                         <div className="notice">
                           {t("ceacAutoLockedByPassportSlot")}
+                        </div>
+                      )}
+                      {selectedCase.lastCeacError && (
+                        <div className="notice">
+                          <strong>{t("lastCeacError")}：</strong>{selectedCase.lastCeacError}
                         </div>
                       )}
                       <div className="two-col metric-grid">

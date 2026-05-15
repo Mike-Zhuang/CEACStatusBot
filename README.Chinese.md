@@ -88,7 +88,7 @@ npm run dev
 | `STANDARD_API_LIMIT_PER_MINUTE`                 | `120`                                         | 普通账号每分钟已登录 API 上限                                                                   |
 | `PREMIUM_API_LIMIT_PER_MINUTE`                  | `300`                                         | Premium 账号每分钟已登录 API 上限                                                               |
 | `ADMIN_API_LIMIT_PER_MINUTE`                    | `600`                                         | 管理员每分钟已登录 API 上限                                                                     |
-| `QUERY_JOB_TIMEOUT_SECONDS`                     | `180`                                         | 查询任务开始运行后超过该秒数才标记为失败；排队等待时间不计入超时                                |
+| `QUERY_JOB_TIMEOUT_SECONDS`                     | `360`                                         | 查询任务开始运行后超过该秒数才标记为失败；排队等待时间不计入超时                                |
 | `WORKER_POLL_INTERVAL_SECONDS`                  | `1`                                           | Worker 轮询 SQLite 队列间隔；GTS 零点加频任务需要秒级拾取                                       |
 | `STANDARD_DAILY_MANUAL_QUERY_LIMIT`             | `1`                                           | 普通账号每天可发起的 CEAC/GTS 手动查询次数                                                      |
 | `PREMIUM_DAILY_MANUAL_QUERY_LIMIT`              | `1000`                                        | Premium 账号每天可发起的 CEAC/GTS 手动查询次数                                                  |
@@ -114,7 +114,7 @@ npm run dev
 
 新增启用自动监控的签证档案后，系统会立刻排队执行一次初始 CEAC 自动查询，这次不占用每日手动刷新额度。之后每个启用的签证档案都会保存 `nextCheckAt`。调度器每分钟扫描到期档案，并将自动查询任务写入 SQLite 队列。独立 Worker 消费队列、调用 CEAC 查询、记录查询日志、更新状态历史并发送邮件通知。
 
-立即查询不会由 Web 进程直接执行爬虫，而是创建 `manual` 任务并返回任务 ID。前端轮询任务状态，完成后刷新档案信息和状态时间线。CEAC 立即查询和 GTS 立即查询 slot 共用每日手动查询额度：普通账号默认每天 1 次，Premium 默认每天 1000 次，管理员账号不受限制。CEAC/GTS 业务邮件也有账号级每日额度：普通账号默认每天 5 封，Premium 默认每天 1000 封。Worker 优先级数值越小越优先；Premium 默认 50，普通账号默认 100，管理员可手动覆盖。
+立即查询不会由 Web 进程直接执行爬虫，而是创建 `manual` 任务并返回任务 ID。前端轮询任务状态，完成后刷新档案信息和状态时间线。CEAC 查询失败原因会显示在档案详情页，方便用户判断是需要核对输入信息，还是 CEAC 官网慢、网络波动等临时问题。CEAC 立即查询和 GTS 立即查询 slot 共用每日手动查询额度：普通账号默认每天 1 次，Premium 默认每天 1000 次，管理员账号不受限制。CEAC/GTS 业务邮件也有账号级每日额度：普通账号默认每天 5 封，Premium 默认每天 1000 封。Worker 优先级数值越小越优先；Premium 默认 50，普通账号默认 100，管理员可手动覆盖。
 
 系统会比较最近一次历史记录中的状态和 CEAC 更新时间：
 

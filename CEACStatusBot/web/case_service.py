@@ -23,7 +23,7 @@ PREMIUM_CASE_LIMIT = 5
 STANDARD_WORKER_PRIORITY = 100
 PREMIUM_WORKER_PRIORITY = 50
 QUERY_TIMEOUT_ERROR_MESSAGE = (
-    "查询超过 3 分钟仍未完成，已标记为失败。可能是信息填写有误、CEAC/GTS 服务暂时异常或服务器繁忙；"
+    "查询运行超过系统设定时间仍未完成，已标记为失败。可能是信息填写有误、CEAC/GTS 服务暂时异常或服务器繁忙；"
     "请核对信息输入是否正确后重试，仍有问题请联系管理员。"
 )
 
@@ -75,6 +75,7 @@ def normalizeCaseRow(row: dict[str, Any]) -> dict[str, Any]:
         "lastTriggerType": row.get("last_trigger_type"),
         "lastStatus": row.get("last_status"),
         "lastDescription": row.get("last_description"),
+        "lastCeacError": row.get("last_ceac_error") or "",
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
@@ -89,7 +90,17 @@ def listCases(userId: int | None = None) -> list[dict[str, Any]]:
     with getConnection() as connection:
         rows = connection.execute(
             f"""
-            SELECT c.*, s.status AS last_status, s.description AS last_description
+            SELECT c.*,
+                   s.status AS last_status,
+                   s.description AS last_description,
+                   (
+                       SELECT r.error_message
+                       FROM query_runs r
+                       WHERE r.case_id = c.id
+                         AND r.trigger_type IN ('manual', 'automatic')
+                       ORDER BY r.id DESC
+                       LIMIT 1
+                   ) AS last_ceac_error
             FROM ceac_cases c
             LEFT JOIN status_catalog s ON s.id = c.last_status_id
             {where}
@@ -109,7 +120,17 @@ def getCase(caseId: int, userId: int | None = None) -> dict[str, Any] | None:
     with getConnection() as connection:
         row = connection.execute(
             f"""
-            SELECT c.*, s.status AS last_status, s.description AS last_description
+            SELECT c.*,
+                   s.status AS last_status,
+                   s.description AS last_description,
+                   (
+                       SELECT r.error_message
+                       FROM query_runs r
+                       WHERE r.case_id = c.id
+                         AND r.trigger_type IN ('manual', 'automatic')
+                       ORDER BY r.id DESC
+                       LIMIT 1
+                   ) AS last_ceac_error
             FROM ceac_cases c
             LEFT JOIN status_catalog s ON s.id = c.last_status_id
             WHERE c.id = ? {extraWhere}
