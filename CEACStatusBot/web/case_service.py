@@ -790,7 +790,6 @@ def claimNextQueryJob(workerId: str | None = None) -> dict[str, Any] | None:
 
 
 def runQueryJob(job: dict[str, Any]) -> dict[str, Any]:
-    nowIso = utcNowIso()
     try:
         if isPassportSlotTrigger(str(job["triggerType"])):
             result = runPassportSlotQuery(int(job["caseId"]), triggerType=str(job["triggerType"]))
@@ -802,6 +801,7 @@ def runQueryJob(job: dict[str, Any]) -> dict[str, Any]:
         result = {"success": False, "changed": False, "error": str(exc)}
         status = "failed"
         errorMessage = str(exc)
+    finishedIso = utcNowIso()
     with getConnection() as connection:
         connection.execute(
             """
@@ -813,8 +813,8 @@ def runQueryJob(job: dict[str, Any]) -> dict[str, Any]:
                 status,
                 errorMessage,
                 encryptSecret(json.dumps(result, ensure_ascii=False)),
-                nowIso,
-                nowIso,
+                finishedIso,
+                finishedIso,
                 job["id"],
             ),
         )
