@@ -2431,6 +2431,7 @@ function AdminPanel(props: {
   const [collapsedAdminUsers, setCollapsedAdminUsers] = useState<Record<number, boolean>>({});
   const [collapsedLogUsers, setCollapsedLogUsers] = useState<Record<string, boolean>>({});
   const [collapsedSecurityActors, setCollapsedSecurityActors] = useState<Record<string, boolean>>({});
+  const [isFinishedQueueCollapsed, setIsFinishedQueueCollapsed] = useState(true);
   const [queueClockMs, setQueueClockMs] = useState(Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setQueueClockMs(Date.now()), 1000);
@@ -2471,6 +2472,9 @@ function AdminPanel(props: {
   };
   const toggleSecurityActor = (actor: string) => {
     setCollapsedSecurityActors((current) => ({ ...current, [actor]: !(current[actor] ?? true) }));
+  };
+  const toggleFinishedQueue = () => {
+    setIsFinishedQueueCollapsed((current) => !current);
   };
   const currentJobWaitSeconds = (job: AdminQueryJob) => {
     const baseValue = job.status === "running" ? job.started_at : job.created_at;
@@ -2732,8 +2736,14 @@ function AdminPanel(props: {
           <p className="empty-state">{props.t("workerScheduledQueueEmpty")}</p>
         )}
 
-        <h3 className="subhead compact-heading spaced">{props.t("workerFinishedQueue")}</h3>
-        {props.finishedQueryJobs.length > 0 ? (
+        <button type="button" className="subsection-toggle spaced" onClick={toggleFinishedQueue}>
+          <span className="log-group-title">
+            {isFinishedQueueCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+            <span>{props.t("workerFinishedQueue")}</span>
+          </span>
+          <span className="status-badge">{props.finishedQueryJobs.length} {props.t("logItems")}</span>
+        </button>
+        {!isFinishedQueueCollapsed && props.finishedQueryJobs.length > 0 ? (
           <div className="log-table-wrap">
             <table className="log-table">
               <thead>
@@ -2768,9 +2778,9 @@ function AdminPanel(props: {
               </tbody>
             </table>
           </div>
-        ) : (
+        ) : !isFinishedQueueCollapsed ? (
           <p className="empty-state">{props.t("workerFinishedQueueEmpty")}</p>
-        )}
+        ) : null}
       </section>
 
       <section className="panel">
