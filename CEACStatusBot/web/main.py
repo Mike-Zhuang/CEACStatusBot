@@ -77,6 +77,8 @@ from .security_guard import (
 )
 from .secrets import decryptIfNeeded, getCredentialMasterKey
 
+TERMS_VERSION = "2026-05-15"
+
 
 app = FastAPI(title="CEACStatusBot Web", version="1.0.0")
 settings = getSettings()
@@ -177,6 +179,43 @@ def listCasesForQueryRuns(rows: list[dict]) -> list[dict]:
         item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
         runs.append(item)
     return runs
+
+
+def listQueryJobsForAdmin(rows: list[dict]) -> list[dict]:
+    now = datetime.now(UTC)
+    jobs: list[dict] = []
+    for index, row in enumerate(rows, start=1):
+        item = dict(row)
+        item["queue_position"] = index
+        item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
+        baseTime = item.get("started_at") if item.get("status") == "running" else item.get("created_at")
+        try:
+            started = datetime.fromisoformat(str(baseTime)) if baseTime else now
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=UTC)
+            item["wait_seconds"] = max(0, int((now - started.astimezone(UTC)).total_seconds()))
+        except ValueError:
+            item["wait_seconds"] = 0
+        jobs.append(item)
+    return jobs
+
+
+def listScheduledQueryJobsForAdmin(rows: list[dict]) -> list[dict]:
+    now = datetime.now(UTC)
+    jobs: list[dict] = []
+    for index, row in enumerate(rows, start=1):
+        item = dict(row)
+        item["schedule_position"] = index
+        item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
+        try:
+            nextCheckAt = datetime.fromisoformat(str(item.get("next_check_at") or ""))
+            if nextCheckAt.tzinfo is None:
+                nextCheckAt = nextCheckAt.replace(tzinfo=UTC)
+            item["seconds_until_queue"] = max(0, int((nextCheckAt.astimezone(UTC) - now).total_seconds()))
+        except ValueError:
+            item["seconds_until_queue"] = 0
+        jobs.append(item)
+    return jobs
 
 
 def enforceDailyManualQueryLimit(user: dict) -> None:
@@ -384,10 +423,23 @@ def register(payload: RegisterRequest, request: Request, response: Response) -> 
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码已过期")
         cursor = connection.execute(
             """
-            INSERT INTO users (email, password_hash, role, account_tier, is_email_verified, created_at, updated_at)
-            VALUES (?, ?, 'user', 'standard', 1, ?, ?)
+            INSERT INTO users (
+                email, password_hash, role, account_tier, is_email_verified,
+                terms_version, terms_accepted_at, terms_acceptance_ip_hash, terms_acceptance_device_hash,
+                created_at, updated_at
+            )
+            VALUES (?, ?, 'user', 'standard', 1, ?, ?, ?, ?, ?, ?)
             """,
-            (email, hashPassword(payload.password), nowIso, nowIso),
+            (
+                email,
+                hashPassword(payload.password),
+                TERMS_VERSION,
+                nowIso,
+                hashes["ip_hash"],
+                hashes["device_hash"],
+                nowIso,
+                nowIso,
+            ),
         )
         connection.execute("UPDATE email_verification_codes SET used_at = ? WHERE id = ?", (nowIso, codeRow["id"]))
         user = connection.execute(
@@ -700,6 +752,92 @@ def adminQueryRuns(_: dict = Depends(adminDependency)) -> dict:
             """,
         ).fetchall()
     return {"runs": listCasesForQueryRuns(rows)}
+
+
+@app.get("/api/admin/query-jobs")
+def adminQueryJobs(_: dict = Depends(adminDependency)) -> dict:
+    nowIso = datetime.now(UTC).replace(microsecond=0).isoformat()
+    with getConnection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                j.id,
+                j.case_id,
+                j.trigger_type,
+                j.status,
+                j.attempts,
+                j.locked_at,
+                j.locked_by,
+                j.started_at,
+                j.finished_at,
+                j.error_message,
+                j.created_at,
+                j.updated_at,
+                c.display_name,
+                c.application_num,
+                u.email AS user_email,
+                u.worker_priority
+            FROM query_jobs j
+            JOIN ceac_cases c ON c.id = j.case_id
+            JOIN users u ON u.id = c.user_id
+            WHERE j.status IN ('queued', 'running')
+            ORDER BY
+                CASE WHEN j.status = 'running' THEN 0 ELSE 1 END,
+                u.worker_priority ASC,
+                j.id ASC
+            LIMIT 200
+            """,
+        ).fetchall()
+        scheduledRows = connection.execute(
+            """
+            SELECT
+                'ceac-' || c.id AS scheduled_id,
+                c.id AS case_id,
+                'automatic' AS trigger_type,
+                c.next_check_at,
+                c.display_name,
+                c.application_num,
+                u.email AS user_email,
+                u.worker_priority
+            FROM ceac_cases c
+            JOIN users u ON u.id = c.user_id
+            WHERE c.is_enabled = 1
+              AND c.next_check_at IS NOT NULL
+              AND c.next_check_at > ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM query_jobs j
+                  WHERE j.case_id = c.id
+                    AND j.status IN ('queued', 'running')
+                    AND j.trigger_type NOT LIKE 'passport_slot_%'
+              )
+            UNION ALL
+            SELECT
+                'gts-' || m.case_id AS scheduled_id,
+                m.case_id AS case_id,
+                'passport_slot_automatic' AS trigger_type,
+                m.next_check_at,
+                c.display_name,
+                c.application_num,
+                u.email AS user_email,
+                u.worker_priority
+            FROM passport_slot_monitors m
+            JOIN ceac_cases c ON c.id = m.case_id
+            JOIN users u ON u.id = c.user_id
+            WHERE m.is_enabled = 1
+              AND m.next_check_at IS NOT NULL
+              AND m.next_check_at > ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM query_jobs j
+                  WHERE j.case_id = m.case_id
+                    AND j.status IN ('queued', 'running')
+                    AND j.trigger_type LIKE 'passport_slot_%'
+              )
+            ORDER BY next_check_at ASC, worker_priority ASC, case_id ASC
+            LIMIT 50
+            """,
+            (nowIso, nowIso),
+        ).fetchall()
+    return {"jobs": listQueryJobsForAdmin(rows), "scheduledJobs": listScheduledQueryJobsForAdmin(scheduledRows)}
 
 
 @app.get("/api/admin/security-events")

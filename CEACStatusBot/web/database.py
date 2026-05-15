@@ -46,6 +46,10 @@ def initializeDatabase() -> None:
                 account_tier TEXT NOT NULL DEFAULT 'standard',
                 worker_priority INTEGER NOT NULL DEFAULT 100,
                 is_email_verified INTEGER NOT NULL DEFAULT 0,
+                terms_version TEXT NOT NULL DEFAULT '',
+                terms_accepted_at TEXT,
+                terms_acceptance_ip_hash TEXT NOT NULL DEFAULT '',
+                terms_acceptance_device_hash TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -272,6 +276,22 @@ def initializeDatabase() -> None:
         if "account_tier" not in userColumns:
             connection.execute(
                 "ALTER TABLE users ADD COLUMN account_tier TEXT NOT NULL DEFAULT 'standard'",
+            )
+        if "terms_version" not in userColumns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN terms_version TEXT NOT NULL DEFAULT ''",
+            )
+        if "terms_accepted_at" not in userColumns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN terms_accepted_at TEXT",
+            )
+        if "terms_acceptance_ip_hash" not in userColumns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN terms_acceptance_ip_hash TEXT NOT NULL DEFAULT ''",
+            )
+        if "terms_acceptance_device_hash" not in userColumns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN terms_acceptance_device_hash TEXT NOT NULL DEFAULT ''",
             )
         if "email_notifications_enabled" not in columns:
             connection.execute(

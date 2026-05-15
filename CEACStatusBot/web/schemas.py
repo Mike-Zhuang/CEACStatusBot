@@ -56,6 +56,14 @@ class RegisterRequest(SecureModel):
     email: EmailStr
     password: str = Field(min_length=8)
     code: str = Field(min_length=4, max_length=12)
+    acceptedTerms: bool
+
+    @field_validator("acceptedTerms")
+    @classmethod
+    def validateAcceptedTerms(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("注册前必须阅读并同意用户条款和免责声明")
+        return value
 
 
 class LoginRequest(SecureModel):

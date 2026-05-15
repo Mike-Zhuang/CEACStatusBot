@@ -45,6 +45,8 @@ def extract_page_error(soup):
                 candidates.append(text)
     for text in candidates:
         lower = text.lower()
+        if "code entered" in lower and "does not match" in lower:
+            return "CEAC 验证码校验失败，系统会在下次查询时重新尝试。"
         if "captcha" in lower:
             return "CEAC 验证码校验失败，系统会在下次查询时重新尝试。"
         if "case" in lower or "application" in lower or "passport" in lower or "surname" in lower:

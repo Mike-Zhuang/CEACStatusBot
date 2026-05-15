@@ -83,6 +83,37 @@ interface QueryRun {
   duration_ms: number;
 }
 
+interface AdminQueryJob {
+  id: number;
+  case_id: number;
+  display_name: string;
+  application_num: string;
+  user_email: string;
+  worker_priority: number;
+  queue_position: number;
+  trigger_type: QueryRun["trigger_type"];
+  status: "queued" | "running";
+  attempts: number;
+  locked_by: string | null;
+  created_at: string;
+  started_at: string | null;
+  updated_at: string;
+  wait_seconds: number;
+}
+
+interface AdminScheduledQueryJob {
+  scheduled_id: string;
+  case_id: number;
+  display_name: string;
+  application_num: string;
+  user_email: string;
+  worker_priority: number;
+  schedule_position: number;
+  trigger_type: QueryRun["trigger_type"];
+  next_check_at: string;
+  seconds_until_queue: number;
+}
+
 interface QueryJob {
   id: number;
   caseId: number;
@@ -247,6 +278,12 @@ const translations = {
     accountTierLimits: "Standard: 1 profile with automatic CEAC checks about once per hour; after Issued, checks slow to once per day and stop after one week. Manual refresh is limited to 1/day, with limited daily emails. Premium: 5 profiles with higher query and email quotas.",
     accountTierCurrent: "Current tier",
     appSubtitle: "Visa status monitoring, query history, and email delivery.",
+    publicNoticeTitle: "Service notice",
+    publicNoticeBody: "CEACStatusBot is a non-official, nonprofit personal project for learning, research, and convenient status checking by the site owner and authorized users. It is not affiliated with the U.S. Department of State, CEAC, GTS, or CITIC Bank.",
+    publicNoticeDisclaimer: "This site does not provide visa agency services, official appointment services, automatic booking, slot holding, result guarantees, or any official government or bank service. Query results depend on third-party websites and may be delayed, unavailable, incomplete, or incorrect.",
+    acceptTerms: "I have read and agree to the Terms of Use and Disclaimer.",
+    termsTitle: "Terms of Use and Disclaimer",
+    termsBody: "By registering, you voluntarily provide the required information and authorize this site to use it only for CEAC status checking, GTS slot detection, notifications, security auditing, and necessary account operations. This is a non-official nonprofit personal project, not a visa agency, official service, or automatic booking service. You must not attack, abuse, batch scrape, share another person's data without authorization, or use this site for unlawful purposes. CEAC and GTS are third-party services; this site does not guarantee visa results, passport progress, slot availability, booking success, timeliness, completeness, or uninterrupted service. Please protect your UID/HAL/passport information.",
     applicationId: "Application ID or Case Number",
     autoMonitor: "Enable automatic monitoring",
     caseCreated: "Visa profile created.",
@@ -337,6 +374,18 @@ const translations = {
     statusMonitoring: "Visa Status Check",
     success: "Success",
     systemLogs: "System query logs",
+    workerQueue: "Worker queue",
+    workerQueueEmpty: "No queued or running jobs",
+    workerScheduledQueue: "Upcoming scheduled jobs",
+    workerScheduledQueueEmpty: "No upcoming automatic jobs",
+    workerQueueCurrent: "Current queue / running",
+    scheduledPosition: "Upcoming position",
+    expectedQueueAt: "Expected queue time",
+    timeUntilQueue: "Time until queue",
+    queuePosition: "Position",
+    queueWait: "Wait",
+    workerStatus: "Job status",
+    workerLockedBy: "Worker",
     systemEmail: "Default sender email",
     systemEmailConfigured: "Configured",
     systemEmailNotConfigured: "Not configured",
@@ -367,9 +416,10 @@ const translations = {
     queryInProgress: "Querying CEAC. Please wait.",
     pre2022Note: "NOTE: For applicants who completed their forms prior to January 1, 2022, please put NA into the Passport and Surname fields.",
     passportSlotMonitor: "Passport appointment monitor",
+    betaLabel: "Beta",
     passportSlotIntro: "Enter your UID or HAL after Approved or Issued to watch GTS appointment slots.",
     passportSlotEarlyHint: "You can configure this now, but GTS usually returns valid tokens after Approved or Issued.",
-    passportSlotDetectionOnly: "This monitor only detects available GTS appointment slots and sends notifications. It does not automatically book, hold, or grab slots.",
+    passportSlotDetectionOnly: "Beta: this monitor only detects GTS appointment slots returned by the official site and sends notifications. It does not automatically book, hold, or grab slots, and does not guarantee completeness, real-time accuracy, or booking success.",
     passportSlotIdentifier: "UID or HAL",
     passportSlotIdentifierPlaceholder: "106417002 or HAL0123456789",
     passportSlotSave: "Save monitor",
@@ -425,6 +475,12 @@ const translations = {
     accountTierLimits: "普通账号：1 个档案，CEAC 会自动约每小时查询一次；Issued 后降为每天一次，并在一周后自动停止。手动立即刷新限每天 1 次，并限制每日邮件数量；Premium：5 个档案，查询和邮件额度都更高。",
     accountTierCurrent: "当前账号等级",
     appSubtitle: "签证状态监控、查询历史与邮件提醒。",
+    publicNoticeTitle: "服务说明 / 风险提示",
+    publicNoticeBody: "CEACStatusBot 是非官方、非盈利个人项目，仅用于学习研究，以及方便站长和授权用户查询公开状态。本项目不隶属于美国国务院、CEAC、GTS 或中信银行。",
+    publicNoticeDisclaimer: "本站不提供签证代理、官方预约、自动抢号、占位、结果保证或任何官方/银行服务。查询结果依赖第三方网站，可能存在延迟、不可用、不完整或错误。",
+    acceptTerms: "我已阅读并同意用户条款和免责声明。",
+    termsTitle: "用户条款和免责声明",
+    termsBody: "注册即表示你确认自愿提供必要信息，并授权本站仅用于 CEAC 状态查询、GTS slot 检测、邮件通知、安全审计和必要账号操作。你理解本站为非官方、非盈利个人项目，不是签证代理、官方服务或自动预约服务。你不得攻击、滥用、批量抓取、未经授权提交他人信息，或将本站用于违法违规目的。CEAC 和 GTS 均为第三方服务；本站不保证签证结果、护照进度、slot 可用性、预约成功、时效性、完整性或服务不中断。请妥善保护 UID/HAL/护照等个人信息。",
     applicationId: "Application ID 或 Case Number",
     autoMonitor: "启用自动监控",
     caseCreated: "签证档案已创建。",
@@ -515,6 +571,18 @@ const translations = {
     statusMonitoring: "Visa Status Check",
     success: "成功",
     systemLogs: "系统监控日志",
+    workerQueue: "Worker 队列",
+    workerQueueEmpty: "当前没有排队或运行中的任务",
+    workerScheduledQueue: "未来预计入队",
+    workerScheduledQueueEmpty: "暂无未来自动查询任务",
+    workerQueueCurrent: "当前队列 / 运行中",
+    scheduledPosition: "预计顺序",
+    expectedQueueAt: "预计入队时间",
+    timeUntilQueue: "距离入队",
+    queuePosition: "队列位置",
+    queueWait: "等待时间",
+    workerStatus: "任务状态",
+    workerLockedBy: "Worker",
     systemEmail: "默认发信邮箱",
     systemEmailConfigured: "已配置",
     systemEmailNotConfigured: "未配置",
@@ -545,9 +613,10 @@ const translations = {
     queryInProgress: "正在查询 CEAC，请稍候。",
     pre2022Note: "注意：如果你在 2022 年 1 月 1 日之前完成表格，请在护照号码和姓氏字段填写 NA。",
     passportSlotMonitor: "护照预约监控",
+    betaLabel: "Beta",
     passportSlotIntro: "Approved 或 Issued 后填写 UID/HAL，系统会轮询 GTS 可预约时间。",
     passportSlotEarlyHint: "你可以提前配置；但 GTS 通常在 Approved 或 Issued 后才会返回有效 token。",
-    passportSlotDetectionOnly: "本功能只负责检测 GTS 可预约 slot 并发送提醒，不支持自动预约、占位或抢 slot。",
+    passportSlotDetectionOnly: "Beta：本功能只负责检测 GTS 官网返回的可预约 slot 并发送提醒，不支持自动预约、占位或抢 slot，也不保证结果完整、实时一致或一定预约成功。",
     passportSlotIdentifier: "UID 或 HAL",
     passportSlotIdentifierPlaceholder: "106417002 或 HAL0123456789",
     passportSlotSave: "保存监控",
@@ -663,6 +732,13 @@ function formatTime(value: string | null, languageMode: LanguageMode): string {
   return new Date(value).toLocaleString(languageMode === "zh" ? "zh-CN" : "en-US");
 }
 
+function formatDurationSeconds(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
+}
+
 function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryRun["trigger_type"], t: (key: TranslationKey) => string): string {
   if (value === "passport_slot_manual") {
     return `${t("passportSlotMonitor")} · ${t("triggerManual")}`;
@@ -736,6 +812,8 @@ export function App() {
   const [passportSlotHistory, setPassportSlotHistory] = useState<PassportSlotHistoryItem[]>([]);
   const [passportSlotIdentifier, setPassportSlotIdentifier] = useState("");
   const [queryRuns, setQueryRuns] = useState<QueryRun[]>([]);
+  const [queryJobs, setQueryJobs] = useState<AdminQueryJob[]>([]);
+  const [scheduledQueryJobs, setScheduledQueryJobs] = useState<AdminScheduledQueryJob[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [systemEmailConfig, setSystemEmailConfig] = useState<SystemEmailConfig | null>(null);
   const [systemEmailForm, setSystemEmailForm] = useState<SystemEmailForm>({
@@ -759,6 +837,7 @@ export function App() {
   const [rememberAccount, setRememberAccount] = useState(rememberedCredentials.rememberAccount);
   const [rememberPassword, setRememberPassword] = useState(rememberedCredentials.rememberPassword);
   const [registerCode, setRegisterCode] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [resetCode, setResetCode] = useState("");
   const [resetConfirmPassword, setResetConfirmPassword] = useState("");
   const [message, setMessage] = useState<{ scope: MessageScope; text: string } | null>(null);
@@ -844,14 +923,17 @@ export function App() {
   }
 
   async function loadAdminData() {
-    const [runsPayload, casesPayload, usersPayload, systemEmailPayload, securityEventsPayload] = await Promise.all([
+    const [runsPayload, jobsPayload, casesPayload, usersPayload, systemEmailPayload, securityEventsPayload] = await Promise.all([
       requestJson<{ runs: QueryRun[] }>("/api/admin/query-runs"),
+      requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[] }>("/api/admin/query-jobs"),
       requestJson<{ cases: CeacCase[] }>("/api/admin/cases"),
       requestJson<{ users: AdminUser[] }>("/api/admin/users"),
       requestJson<{ config: SystemEmailConfig }>("/api/admin/system-email"),
       requestJson<{ events: SecurityEvent[] }>("/api/admin/security-events?limit=200"),
     ]);
     setQueryRuns(runsPayload.runs);
+    setQueryJobs(jobsPayload.jobs);
+    setScheduledQueryJobs(jobsPayload.scheduledJobs);
     setAdminCases(casesPayload.cases);
     setAdminUsers(usersPayload.users);
     setSecurityEvents(securityEventsPayload.events);
@@ -914,7 +996,7 @@ export function App() {
       const path = authMode === "login" ? "/api/auth/login" : "/api/auth/register";
       const body = authMode === "login"
         ? { email: authEmail, password: authPassword }
-        : { email: authEmail, password: authPassword, code: registerCode };
+        : { email: authEmail, password: authPassword, code: registerCode, acceptedTerms };
       const payload = await requestJson<{ user: User }>(path, {
         method: "POST",
         body: JSON.stringify(body),
@@ -936,6 +1018,7 @@ export function App() {
         localStorage.removeItem("rememberedPassword");
       }
       setUser(payload.user);
+      setAcceptedTerms(false);
       setProfileForm({ email: payload.user.email, currentPassword: "", newPassword: "", confirmPassword: "" });
       setCaseForm((current) => current.receiveEmail ? current : createEmptyCaseForm(payload.user.email));
       await loadCases();
@@ -1421,6 +1504,19 @@ export function App() {
                 </div>
               </label>
             )}
+            {authMode === "register" && (
+              <div className="terms-box">
+                <div className="support-title">
+                  <Shield size={16} />
+                  <span>{t("termsTitle")}</span>
+                </div>
+                <p>{t("termsBody")}</p>
+                <label className="checkbox">
+                  <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} required />
+                  <span className="body-sm">{t("acceptTerms")}</span>
+                </label>
+              </div>
+            )}
             {authMode === "forgot" && (
               <label>
                 {languageMode === "zh" ? "确认新密码" : "Confirm new password"}
@@ -1445,7 +1541,7 @@ export function App() {
             {activeMessage && <p className="notice">{activeMessage}</p>}
           </form>
         </section>
-        <SupportPanel t={t} compact />
+        <PublicNoticePanel t={t} />
         <SiteFooter t={t} />
       </main>
     );
@@ -1523,6 +1619,7 @@ export function App() {
                 </div>
               </section>
               <SupportPanel t={t} />
+              <PublicNoticePanel t={t} />
             </div>
 
             <div className="stack">
@@ -1666,6 +1763,8 @@ export function App() {
           <AdminPanel
             users={adminUsers}
             queryRuns={queryRuns}
+            queryJobs={queryJobs}
+            scheduledQueryJobs={scheduledQueryJobs}
             securityEvents={securityEvents}
             cases={adminCases}
             reload={loadAdminData}
@@ -1699,6 +1798,21 @@ function SupportPanel(props: { t: (key: TranslationKey) => string; compact?: boo
         <p>{props.t("supportPremium")}</p>
         <p className="support-disclaimer">{props.t("supportDisclaimer")}</p>
         <img src="/support/buy-me-a-coffee.jpg" alt={props.t("supportTitle")} />
+      </div>
+    </section>
+  );
+}
+
+function PublicNoticePanel(props: { t: (key: TranslationKey) => string }) {
+  return (
+    <section className="support-card compact">
+      <div className="support-copy">
+        <div className="support-title">
+          <Shield size={16} />
+          <span>{props.t("publicNoticeTitle")}</span>
+        </div>
+        <p>{props.t("publicNoticeBody")}</p>
+        <p className="support-disclaimer">{props.t("publicNoticeDisclaimer")}</p>
       </div>
     </section>
   );
@@ -1828,7 +1942,10 @@ function PassportSlotMonitorPanel(props: {
     <section className={`panel passport-slot-panel ${isReadyStatus ? "ready" : ""}`}>
       <div className="panel-title">
         <div>
-          <h2 className="subhead">{props.t("passportSlotMonitor")}</h2>
+          <h2 className="subhead inline-title">
+            {props.t("passportSlotMonitor")}
+            <span className="beta-badge">{props.t("betaLabel")}</span>
+          </h2>
           <p className="form-intro">
             {isReadyStatus ? props.t("passportSlotIntro") : props.t("passportSlotEarlyHint")}
           </p>
@@ -2020,6 +2137,8 @@ function ProfilePanel(props: {
 function AdminPanel(props: {
   users: AdminUser[];
   queryRuns: QueryRun[];
+  queryJobs: AdminQueryJob[];
+  scheduledQueryJobs: AdminScheduledQueryJob[];
   securityEvents: SecurityEvent[];
   cases: CeacCase[];
   reload: () => Promise<void>;
@@ -2236,6 +2355,90 @@ function AdminPanel(props: {
             );
           })}
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2 className="headline">{props.t("workerQueue")}</h2>
+          <button className="button secondary" onClick={props.reload}>{props.t("refresh")}</button>
+        </div>
+        <h3 className="subhead compact-heading">{props.t("workerQueueCurrent")}</h3>
+        {props.queryJobs.length > 0 ? (
+          <div className="log-table-wrap">
+            <table className="log-table">
+              <thead>
+                <tr>
+                  <th>{props.t("queuePosition")}</th>
+                  <th>{props.t("email")}</th>
+                  <th>{props.t("profile")}</th>
+                  <th>{props.t("applicationId")}</th>
+                  <th>{props.t("lastCheckMode")}</th>
+                  <th>{props.t("workerPriority")}</th>
+                  <th>{props.t("workerStatus")}</th>
+                  <th>{props.t("createdAt")}</th>
+                  <th>{props.t("queueWait")}</th>
+                  <th>{props.t("workerLockedBy")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.queryJobs.map((job) => (
+                  <tr key={job.id}>
+                    <td className="mono-text">{job.queue_position}</td>
+                    <td>{job.user_email}</td>
+                    <td>{job.display_name}</td>
+                    <td className="mono-text">{job.application_num}</td>
+                    <td>{formatTriggerType(job.trigger_type, props.t)}</td>
+                    <td className="mono-text">{job.worker_priority}</td>
+                    <td>
+                      <span className={`status-badge ${job.status === "running" ? "success" : ""}`}>{job.status}</span>
+                    </td>
+                    <td>{formatTime(job.created_at, props.languageMode)}</td>
+                    <td className="mono-text">{formatDurationSeconds(job.wait_seconds)}</td>
+                    <td className="mono-text">{job.locked_by || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty-state">{props.t("workerQueueEmpty")}</p>
+        )}
+
+        <h3 className="subhead compact-heading spaced">{props.t("workerScheduledQueue")}</h3>
+        {props.scheduledQueryJobs.length > 0 ? (
+          <div className="log-table-wrap">
+            <table className="log-table">
+              <thead>
+                <tr>
+                  <th>{props.t("scheduledPosition")}</th>
+                  <th>{props.t("email")}</th>
+                  <th>{props.t("profile")}</th>
+                  <th>{props.t("applicationId")}</th>
+                  <th>{props.t("lastCheckMode")}</th>
+                  <th>{props.t("workerPriority")}</th>
+                  <th>{props.t("expectedQueueAt")}</th>
+                  <th>{props.t("timeUntilQueue")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.scheduledQueryJobs.map((job) => (
+                  <tr key={job.scheduled_id}>
+                    <td className="mono-text">{job.schedule_position}</td>
+                    <td>{job.user_email}</td>
+                    <td>{job.display_name}</td>
+                    <td className="mono-text">{job.application_num}</td>
+                    <td>{formatTriggerType(job.trigger_type, props.t)}</td>
+                    <td className="mono-text">{job.worker_priority}</td>
+                    <td>{formatTime(job.next_check_at, props.languageMode)}</td>
+                    <td className="mono-text">{formatDurationSeconds(job.seconds_until_queue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty-state">{props.t("workerScheduledQueueEmpty")}</p>
+        )}
       </section>
 
       <section className="panel">
