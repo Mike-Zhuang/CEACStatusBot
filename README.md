@@ -22,6 +22,7 @@ This project is a modified version released under the GPLv3 license. It preserve
 - Standard accounts can create 1 CEAC profile, and automatic checks still run about once per hour; after `Issued`, checks slow to once per day and stop after one week. Standard accounts get 1 manual refresh per day and a limited daily email quota. Premium accounts can create 5 profiles and use high query/email quotas. Admins are exempt.
 - Enabled profiles are queued once per hour at a random minute. After a profile enters `Issued`, automatic CEAC checks slow down to once per day and stop automatically after one week.
 - The public login page shows a non-official, nonprofit, learning/research-use notice instead of donation QR content. The donation QR remains available only after login and in positive status / GTS notification emails.
+- The unified Terms of Use include cross-border query authorization: CEAC/GTS checks may submit necessary profile fields to official or third-party systems outside mainland China.
 - When a CEAC profile enters `Approved` or `Issued`, status emails invite the user to enter UID/HAL and enable GTS passport appointment slot monitoring.
 - GTS passport appointment monitoring is marked Beta and is bound to a CEAC profile. It polls about every 25-35 minutes during normal hours, with separate switches for automatic polling and slot-change email notifications. It only detects and notifies; it does not auto-book, hold, or grab slots. Once slots are found, polling slows to roughly once per hour until the user confirms they have booked and stops monitoring.
 - `Approved`, `Issued`, Issued auto-stop, and GTS slot emails include a small nonprofit support note and the same donation QR image used on the website. Negative CEAC statuses such as `Refused` do not include the donation block.
@@ -133,6 +134,8 @@ Creating an enabled profile automatically queues one initial CEAC query, and thi
 
 If a CEAC profile fails 5 times in a row, the user receives an email asking them to verify the location, Application ID / Case Number, passport number, and first 5 surname letters. A successful CEAC query resets the counter. If the same profile reaches 10 consecutive CEAC failures, automatic CEAC checks are slowed to once per day instead of stopping immediately. If the profile still does not recover within 7 days after entering this failure slow mode, automatic CEAC checks are stopped and the user is notified; manual `Query now` remains available.
 
+For data minimization, accounts with no new CEAC status history or GTS slot-change history for about 15 days receive an inactivity deletion warning. If there is still no new status or slot activity for about another 15 days, meaning about 30 days in total, the account and related profile data are automatically deleted.
+
 The system compares the latest history item with the current CEAC result:
 
 - Exact match: only records the query log; no notification is sent.
@@ -152,6 +155,7 @@ Passport appointment slot monitoring uses the same-origin GTS API flow: authenti
 - Application-level defenses include anonymous device cookies, SQLite-backed IP/device/account/email rate limits, login cooldowns, database-backed sessions with idle timeout, request body limits, Host allowlisting, and security-event audit logs.
 - The optional `Remember password` checkbox stores the password in the browser local storage and should only be used on private devices.
 - The CEAC scraper target is fixed to `https://ceac.state.gov`; the GTS slot query target is fixed to `https://scheduling-api.gtspremium.com`. User input cannot affect request hosts or URLs.
+- Cross-border query processing is disclosed in the unified user terms. Users authorize the app to submit the minimum necessary CEAC/GTS query parameters to the relevant official or third-party systems when they create profiles, enable monitoring, or manually query.
 - Production entry goes through the HTTPS domain only. Port 8010 is not a public entry point.
 - Nginx config sets connection timeouts, request rate limits, security headers, and only enables TLS 1.2 / TLS 1.3.
 

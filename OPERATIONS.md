@@ -153,6 +153,8 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
 
 用户在个人信息页打开完整用户条款时，系统会写入当前条款版本、接受时间、IP 摘要和设备摘要到 `users.terms_*` 字段，并记录 `terms_accepted` 安全事件。
 
+账号数据保留策略：如果账号约 15 天没有新的 CEAC 状态历史或 GTS slot 变化历史，后台清理任务会发送删除提醒并写入 `users.inactivity_notice_sent_at`；如果总计约 30 天仍无新的状态或 slot 动态且已经发送过提醒，会先尝试发送删除通知，再删除该用户及级联档案数据。管理员账号不参与自动删除。
+
 ## 备份
 
 建议至少备份三类文件：

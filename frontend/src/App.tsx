@@ -115,6 +115,24 @@ interface AdminScheduledQueryJob {
   seconds_until_queue: number;
 }
 
+interface AdminFinishedQueryJob {
+  id: number;
+  case_id: number;
+  display_name: string;
+  application_num: string;
+  user_email: string;
+  worker_priority: number;
+  finished_position: number;
+  trigger_type: QueryRun["trigger_type"];
+  status: "succeeded" | "failed";
+  error_message: string;
+  locked_by: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string;
+  duration_seconds: number;
+}
+
 interface QueryJob {
   id: number;
   caseId: number;
@@ -286,35 +304,43 @@ const legalTerms = {
       ],
     },
     {
-      title: "3. Third-party Dependence and No Guarantee",
+      title: "3. Cross-border Query Authorization",
+      body: [
+        "You understand and agree that, to perform CEAC status checks and GTS slot detection, this site may submit necessary profile information, including but not limited to Application ID / Case Number, passport number, surname initials, UID/HAL, and related query parameters, to CEAC, GTS, and other official or third-party systems that may be located outside mainland China.",
+        "Such transmission is performed only for the query functions you enable or manually trigger. If you do not agree to this cross-border query processing, do not create a profile, enable monitoring, or use the query features.",
+      ],
+    },
+    {
+      title: "4. Third-party Dependence and No Guarantee",
       body: [
         "CEAC and GTS are independent third-party websites. Query results may be delayed, unavailable, incomplete, blocked, changed, or incorrect because of third-party maintenance, network conditions, CAPTCHA recognition, rate limits, interface changes, or user input errors.",
         "This site does not guarantee visa results, passport progress, CEAC status accuracy, slot availability, booking success, query timeliness, uninterrupted service, or that any notification will be received before a slot changes or disappears.",
       ],
     },
     {
-      title: "4. Prohibited Conduct",
+      title: "5. Prohibited Conduct",
       body: [
         "You must not attack, probe, scrape, overload, bypass limits, abuse APIs, submit another person's information without authorization, use automated clients outside the provided website, interfere with other users, attempt unauthorized access, or use this site for unlawful, fraudulent, commercial resale, or rights-infringing purposes.",
         "The administrator may limit, suspend, terminate, delete, or refuse service for accounts, devices, IP addresses, or traffic patterns that appear abusive, risky, unlawful, or harmful to system stability.",
       ],
     },
     {
-      title: "5. Data Protection and User Responsibility",
+      title: "6. Data Protection, Retention, and User Responsibility",
       body: [
         "Sensitive profile fields, UID/HAL, SMTP secrets, and raw query snapshots are encrypted at rest where supported by the application. The site also uses rate limits, session controls, security logs, and other protective measures, but no online system can be guaranteed to be absolutely secure.",
+        "To reduce long-term retention of personal information, if an account has no new CEAC status history or GTS slot-change history for about 15 days, the site may send a deletion warning. If there is still no new status or slot activity for about another 15 days, meaning about 30 days in total, the account and related profile data may be automatically deleted.",
         "You should keep your account password, UID/HAL, passport information, screenshots, emails, and notification content confidential. Do not forward or publicly post emails or screenshots containing personal or passport-related information.",
       ],
     },
     {
-      title: "6. Service Changes, Limits, and Suspension",
+      title: "7. Service Changes, Limits, and Suspension",
       body: [
         "The site may adjust polling frequency, quotas, worker priority, notification behavior, security rules, supported features, or availability at any time for compliance, stability, cost control, anti-abuse, third-party limitations, or maintenance needs.",
         "Nonprofit support or Premium status is not a purchase of official service and does not create any guarantee regarding official systems, visa outcomes, passport delivery, appointment slots, or booking results.",
       ],
     },
     {
-      title: "7. Limitation of Liability and Contact",
+      title: "8. Limitation of Liability and Contact",
       body: [
         "To the maximum extent permitted by applicable law, the site owner is not liable for losses caused by third-party website behavior, query failures, delayed or missed notifications, user input errors, unauthorized use of another person's information, account compromise, service interruption, or reliance on the displayed results.",
         "For questions, security reports, account issues, or removal requests, contact ceac-admin@mikezhuang.cn.",
@@ -337,35 +363,43 @@ const legalTerms = {
       ],
     },
     {
-      title: "三、第三方依赖与不保证事项",
+      title: "三、跨境查询授权",
+      body: [
+        "你理解并同意，为执行 CEAC 状态查询和 GTS slot 检测，本站可能将必要的档案信息，包括但不限于 Application ID / Case Number、护照号、姓氏前几位、UID/HAL 及相关查询参数，提交至 CEAC、GTS 或其他可能位于中国大陆境外的官方或第三方系统。",
+        "上述传输仅用于你启用或手动触发的查询功能。如果你不同意此类跨境查询处理，请不要创建档案、启用监控或使用查询功能。",
+      ],
+    },
+    {
+      title: "四、第三方依赖与不保证事项",
       body: [
         "CEAC 和 GTS 均为独立第三方网站。查询结果可能因第三方维护、网络波动、验证码识别、接口限流、页面结构变化或用户输入错误而延迟、不可用、不完整、被拦截或不准确。",
         "本站不保证签证结果、护照进度、CEAC 状态准确性、slot 可用性、预约成功、查询时效、服务不中断，也不保证任何提醒一定早于 slot 变化或消失送达。",
       ],
     },
     {
-      title: "四、禁止行为",
+      title: "五、禁止行为",
       body: [
         "你不得攻击、探测、爬取、压测、绕过限流、滥用接口、未经授权提交他人信息、使用站外自动化客户端、干扰其他用户、尝试未授权访问，或将本站用于违法违规、欺诈、商业转售、侵权等目的。",
         "如账号、设备、IP 或流量行为存在滥用、风险、违法嫌疑或影响系统稳定，管理员有权限制、暂停、终止、删除或拒绝提供服务。",
       ],
     },
     {
-      title: "五、数据保护与用户责任",
+      title: "六、数据保护、保留期限与用户责任",
       body: [
         "在应用支持范围内，CEAC 档案敏感字段、UID/HAL、SMTP 密钥和原始查询快照会进行加密存储；本站也会使用限流、会话控制、安全日志等措施降低风险，但任何在线系统都无法承诺绝对安全。",
+        "为减少个人信息长期保存风险，如果账号约 15 天没有新的 CEAC 状态历史或 GTS slot 变化历史，系统可能发送删除提醒；提醒后约 15 天仍无新的状态或 slot 动态，即总计约 30 天无动态时，系统可能自动删除该账号和相关档案数据。",
         "你应妥善保管账号密码、UID/HAL、护照信息、截图、邮件和通知内容，不应转发或公开包含个人信息、护照信息或预约识别信息的邮件和截图。",
       ],
     },
     {
-      title: "六、服务调整、限额与暂停",
+      title: "七、服务调整、限额与暂停",
       body: [
         "出于合规、稳定性、成本控制、防滥用、第三方限制或维护需要，本站可随时调整查询频率、账号额度、Worker 优先级、通知策略、安全规则、功能范围或服务可用性。",
         "自愿赞赏或 Premium 状态不构成购买官方服务，也不形成对官方系统、签证结果、护照送达、slot 可用性或预约成功的任何保证。",
       ],
     },
     {
-      title: "七、责任限制与联系方式",
+      title: "八、责任限制与联系方式",
       body: [
         "在适用法律允许的最大范围内，站长不对第三方网站行为、查询失败、通知延迟或未送达、用户输入错误、未经授权使用他人信息、账号泄露、服务中断或用户依赖页面结果造成的损失承担责任。",
         "如需咨询、反馈安全问题、处理账号事项或请求删除信息，请联系 ceac-admin@mikezhuang.cn。",
@@ -490,10 +524,13 @@ const translations = {
     workerQueueEmpty: "No queued or running jobs",
     workerScheduledQueue: "Upcoming scheduled jobs",
     workerScheduledQueueEmpty: "No upcoming automatic jobs",
+    workerFinishedQueue: "Recently left queue",
+    workerFinishedQueueEmpty: "No recently finished jobs",
     workerQueueCurrent: "Current queue / running",
     scheduledPosition: "Upcoming position",
     expectedQueueAt: "Expected queue time",
     timeUntilQueue: "Time until queue",
+    finishedAt: "Finished",
     queuePosition: "Position",
     queueWait: "Wait",
     workerStatus: "Job status",
@@ -691,10 +728,13 @@ const translations = {
     workerQueueEmpty: "当前没有排队或运行中的任务",
     workerScheduledQueue: "未来预计入队",
     workerScheduledQueueEmpty: "暂无未来自动查询任务",
+    workerFinishedQueue: "刚刚离开队列",
+    workerFinishedQueueEmpty: "暂无刚刚完成的任务",
     workerQueueCurrent: "当前队列 / 运行中",
     scheduledPosition: "预计顺序",
     expectedQueueAt: "预计入队时间",
     timeUntilQueue: "距离入队",
+    finishedAt: "离开时间",
     queuePosition: "队列位置",
     queueWait: "等待时间",
     workerStatus: "任务状态",
@@ -930,6 +970,7 @@ export function App() {
   const [queryRuns, setQueryRuns] = useState<QueryRun[]>([]);
   const [queryJobs, setQueryJobs] = useState<AdminQueryJob[]>([]);
   const [scheduledQueryJobs, setScheduledQueryJobs] = useState<AdminScheduledQueryJob[]>([]);
+  const [finishedQueryJobs, setFinishedQueryJobs] = useState<AdminFinishedQueryJob[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [systemEmailConfig, setSystemEmailConfig] = useState<SystemEmailConfig | null>(null);
   const [systemEmailForm, setSystemEmailForm] = useState<SystemEmailForm>({
@@ -1042,7 +1083,7 @@ export function App() {
   async function loadAdminData() {
     const [runsPayload, jobsPayload, casesPayload, usersPayload, systemEmailPayload, securityEventsPayload] = await Promise.all([
       requestJson<{ runs: QueryRun[] }>("/api/admin/query-runs"),
-      requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[] }>("/api/admin/query-jobs"),
+      requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[]; finishedJobs: AdminFinishedQueryJob[] }>("/api/admin/query-jobs"),
       requestJson<{ cases: CeacCase[] }>("/api/admin/cases"),
       requestJson<{ users: AdminUser[] }>("/api/admin/users"),
       requestJson<{ config: SystemEmailConfig }>("/api/admin/system-email"),
@@ -1051,6 +1092,7 @@ export function App() {
     setQueryRuns(runsPayload.runs);
     setQueryJobs(jobsPayload.jobs);
     setScheduledQueryJobs(jobsPayload.scheduledJobs);
+    setFinishedQueryJobs(jobsPayload.finishedJobs);
     setAdminCases(casesPayload.cases);
     setAdminUsers(usersPayload.users);
     setSecurityEvents(securityEventsPayload.events);
@@ -1065,9 +1107,10 @@ export function App() {
   }
 
   async function loadAdminQueueData() {
-    const jobsPayload = await requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[] }>("/api/admin/query-jobs");
+    const jobsPayload = await requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[]; finishedJobs: AdminFinishedQueryJob[] }>("/api/admin/query-jobs");
     setQueryJobs(jobsPayload.jobs);
     setScheduledQueryJobs(jobsPayload.scheduledJobs);
+    setFinishedQueryJobs(jobsPayload.finishedJobs);
   }
 
   useEffect(() => {
@@ -1077,10 +1120,11 @@ export function App() {
     let isCancelled = false;
     const refreshQueue = async () => {
       try {
-        const jobsPayload = await requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[] }>("/api/admin/query-jobs");
+        const jobsPayload = await requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[]; finishedJobs: AdminFinishedQueryJob[] }>("/api/admin/query-jobs");
         if (!isCancelled) {
           setQueryJobs(jobsPayload.jobs);
           setScheduledQueryJobs(jobsPayload.scheduledJobs);
+          setFinishedQueryJobs(jobsPayload.finishedJobs);
         }
       } catch {
         // 轻量自动刷新失败时保持当前画面，下一轮继续尝试。
@@ -1931,6 +1975,7 @@ export function App() {
             queryRuns={queryRuns}
             queryJobs={queryJobs}
             scheduledQueryJobs={scheduledQueryJobs}
+            finishedQueryJobs={finishedQueryJobs}
             securityEvents={securityEvents}
             cases={adminCases}
             reload={loadAdminData}
@@ -2366,6 +2411,7 @@ function AdminPanel(props: {
   queryRuns: QueryRun[];
   queryJobs: AdminQueryJob[];
   scheduledQueryJobs: AdminScheduledQueryJob[];
+  finishedQueryJobs: AdminFinishedQueryJob[];
   securityEvents: SecurityEvent[];
   cases: CeacCase[];
   reload: () => Promise<void>;
@@ -2684,6 +2730,46 @@ function AdminPanel(props: {
           </div>
         ) : (
           <p className="empty-state">{props.t("workerScheduledQueueEmpty")}</p>
+        )}
+
+        <h3 className="subhead compact-heading spaced">{props.t("workerFinishedQueue")}</h3>
+        {props.finishedQueryJobs.length > 0 ? (
+          <div className="log-table-wrap">
+            <table className="log-table">
+              <thead>
+                <tr>
+                  <th>{props.t("queuePosition")}</th>
+                  <th>{props.t("email")}</th>
+                  <th>{props.t("profile")}</th>
+                  <th>{props.t("applicationId")}</th>
+                  <th>{props.t("lastCheckMode")}</th>
+                  <th>{props.t("workerStatus")}</th>
+                  <th>{props.t("finishedAt")}</th>
+                  <th>{props.t("duration")}</th>
+                  <th>{props.t("workerLockedBy")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.finishedQueryJobs.map((job) => (
+                  <tr key={job.id}>
+                    <td className="mono-text">{job.finished_position}</td>
+                    <td>{job.user_email}</td>
+                    <td>{job.display_name}</td>
+                    <td className="mono-text">{job.application_num}</td>
+                    <td>{formatTriggerType(job.trigger_type, props.t)}</td>
+                    <td>
+                      <span className={`status-badge ${job.status === "succeeded" ? "success" : "error"}`}>{job.status}</span>
+                    </td>
+                    <td>{formatTime(job.finished_at, props.languageMode)}</td>
+                    <td className="mono-text">{formatDurationSeconds(job.duration_seconds)}</td>
+                    <td className="mono-text">{job.locked_by || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty-state">{props.t("workerFinishedQueueEmpty")}</p>
         )}
       </section>
 

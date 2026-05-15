@@ -78,6 +78,8 @@ from .security_guard import (
 from .secrets import decryptIfNeeded, getCredentialMasterKey
 
 TERMS_VERSION = "2026-05-15"
+INACTIVITY_NOTICE_DAYS = 15
+INACTIVITY_DELETE_DAYS = 30
 
 
 app = FastAPI(title="CEACStatusBot Web", version="1.0.0")
@@ -218,6 +220,19 @@ def listScheduledQueryJobsForAdmin(rows: list[dict]) -> list[dict]:
     return jobs
 
 
+def listFinishedQueryJobsForAdmin(rows: list[dict]) -> list[dict]:
+    jobs: list[dict] = []
+    for index, row in enumerate(rows, start=1):
+        item = dict(row)
+        item["finished_position"] = index
+        item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
+        startedAt = parseOptionalIso(item.get("started_at"))
+        finishedAt = parseOptionalIso(item.get("finished_at"))
+        item["duration_seconds"] = max(0, int((finishedAt - startedAt).total_seconds())) if startedAt and finishedAt else 0
+        jobs.append(item)
+    return jobs
+
+
 def enforceDailyManualQueryLimit(user: dict) -> None:
     if user.get("role") == "admin":
         return
@@ -268,6 +283,109 @@ def runDuePassportSlotMonitors() -> None:
         print(f"[scheduler] enqueue GTS failed: {exc}")
 
 
+def parseOptionalIso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def latestUserStatusOrSlotActivity(user: dict) -> datetime:
+    candidates = [parseOptionalIso(user.get("created_at")) or datetime.now(UTC)]
+    for key in ("latest_status_at", "latest_slot_at"):
+        parsed = parseOptionalIso(user.get(key))
+        if parsed:
+            candidates.append(parsed)
+    return max(candidates)
+
+
+def processInactiveAccounts() -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    noticeBefore = now - timedelta(days=INACTIVITY_NOTICE_DAYS)
+    deleteBefore = now - timedelta(days=INACTIVITY_DELETE_DAYS)
+    with getConnection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                u.id,
+                u.email,
+                u.created_at,
+                u.inactivity_notice_sent_at,
+                (
+                    SELECT max(h.fetched_at)
+                    FROM case_status_history h
+                    JOIN ceac_cases c ON c.id = h.case_id
+                    WHERE c.user_id = u.id
+                ) AS latest_status_at,
+                (
+                    SELECT max(ph.fetched_at)
+                    FROM passport_slot_history ph
+                    JOIN ceac_cases c ON c.id = ph.case_id
+                    WHERE c.user_id = u.id
+                ) AS latest_slot_at
+            FROM users u
+            WHERE u.role != 'admin'
+            """,
+        ).fetchall()
+        for row in rows:
+            latestActivity = latestUserStatusOrSlotActivity(row)
+            noticeSentAt = parseOptionalIso(row.get("inactivity_notice_sent_at"))
+            if latestActivity > noticeBefore:
+                if noticeSentAt:
+                    connection.execute(
+                        "UPDATE users SET inactivity_notice_sent_at = NULL, updated_at = ? WHERE id = ?",
+                        (now.isoformat(), row["id"]),
+                    )
+                continue
+            if latestActivity <= deleteBefore and noticeSentAt:
+                try:
+                    sendSystemEmail(
+                        row["email"],
+                        "CEACStatusBot 账号已因长期无动态删除",
+                        "\n".join(
+                            [
+                                "你的 CEACStatusBot 账号已因长期无状态或 slot 动态被自动删除。",
+                                "规则：连续 15 天无状态或 slot 动态会先发送提醒；提醒后再过 15 天仍无动态，即总计约 30 天无动态，会删除账号和相关档案数据。",
+                                "",
+                                "如仍需使用，可重新注册账号。",
+                            ],
+                        ),
+                    )
+                except Exception as exc:
+                    print(f"[cleanup] inactivity deletion email failed for user {row['id']}: {exc}")
+                connection.execute("DELETE FROM users WHERE id = ?", (row["id"],))
+                continue
+            if not noticeSentAt:
+                try:
+                    sendSystemEmail(
+                        row["email"],
+                        "CEACStatusBot 账号长期无动态提醒",
+                        "\n".join(
+                            [
+                                "你的 CEACStatusBot 账号已经约 15 天没有新的 CEAC 状态历史或 GTS slot 变化记录。",
+                                "如果接下来约 15 天仍没有新的状态或 slot 动态，系统会自动删除该账号和相关档案数据。",
+                                "",
+                                f"登录入口：{settings.appBaseUrl}",
+                            ],
+                        ),
+                    )
+                    connection.execute(
+                        "UPDATE users SET inactivity_notice_sent_at = ?, updated_at = ? WHERE id = ?",
+                        (now.isoformat(), now.isoformat(), row["id"]),
+                    )
+                except Exception as exc:
+                    print(f"[cleanup] inactivity notice email failed for user {row['id']}: {exc}")
+
+
+def runInactiveAccountCleanup() -> None:
+    try:
+        processInactiveAccounts()
+    except Exception as exc:
+        print(f"[cleanup] inactive account cleanup failed: {exc}")
+
+
 @app.on_event("startup")
 def onStartup() -> None:
     getCredentialMasterKey()
@@ -278,6 +396,7 @@ def onStartup() -> None:
     if not scheduler.running:
         scheduler.add_job(runDueCases, "interval", minutes=1, id="run-due-cases", replace_existing=True)
         scheduler.add_job(runDuePassportSlotMonitors, "interval", seconds=1, id="run-due-passport-slot-monitors", replace_existing=True)
+        scheduler.add_job(runInactiveAccountCleanup, "interval", hours=6, id="run-inactive-account-cleanup", replace_existing=True)
         scheduler.start()
 
 
@@ -871,7 +990,39 @@ def adminQueryJobs(_: dict = Depends(adminDependency)) -> dict:
             """,
             (nowIso, nowIso),
         ).fetchall()
-    return {"jobs": listQueryJobsForAdmin(rows), "scheduledJobs": listScheduledQueryJobsForAdmin(scheduledRows)}
+        finishedRows = connection.execute(
+            """
+            SELECT
+                j.id,
+                j.case_id,
+                j.trigger_type,
+                j.status,
+                j.attempts,
+                j.locked_at,
+                j.locked_by,
+                j.started_at,
+                j.finished_at,
+                j.error_message,
+                j.created_at,
+                j.updated_at,
+                c.display_name,
+                c.application_num,
+                u.email AS user_email,
+                u.worker_priority
+            FROM query_jobs j
+            JOIN ceac_cases c ON c.id = j.case_id
+            JOIN users u ON u.id = c.user_id
+            WHERE j.status IN ('succeeded', 'failed')
+              AND j.finished_at IS NOT NULL
+            ORDER BY j.finished_at DESC, j.id DESC
+            LIMIT 50
+            """,
+        ).fetchall()
+    return {
+        "jobs": listQueryJobsForAdmin(rows),
+        "scheduledJobs": listScheduledQueryJobsForAdmin(scheduledRows),
+        "finishedJobs": listFinishedQueryJobsForAdmin(finishedRows),
+    }
 
 
 @app.get("/api/admin/security-events")
