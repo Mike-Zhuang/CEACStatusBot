@@ -23,6 +23,7 @@ This project is a modified version released under the GPLv3 license. It preserve
 - Enabled profiles are queued once per hour at a random minute. After a profile enters `Issued`, automatic CEAC checks slow down to once per day and stop automatically after one week.
 - When a CEAC profile enters `Approved` or `Issued`, status emails invite the user to enter UID/HAL and enable GTS passport appointment slot monitoring.
 - GTS passport appointment monitoring is bound to a CEAC profile. It polls at a random 5-10 minute interval by default, with separate switches for automatic polling and slot-change email notifications. Once slots are found, polling slows to roughly once per hour until the user confirms they have booked and stops monitoring.
+- `Approved`, `Issued`, Issued auto-stop, and GTS slot emails include a small nonprofit support note and the same donation QR image used on the website. Negative CEAC statuses such as `Refused` do not include the donation block.
 - Creating an enabled profile automatically queues one initial CEAC query. `Query now` creates manual jobs. The frontend polls job status and refreshes the profile and timeline after completion. Non-admin accounts have a daily manual query limit.
 - No email is sent when status is unchanged. Status changes or CEAC last-updated changes are written to history and trigger notifications.
 - Supports both a system default SMTP sender and per-user custom SMTP settings.

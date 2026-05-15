@@ -1,6 +1,9 @@
 from email.header import Header
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
+from pathlib import Path
 from smtplib import SMTP, SMTP_SSL
 from typing import Any
 from datetime import UTC, datetime, timedelta
@@ -14,6 +17,49 @@ class DailyEmailLimitExceeded(RuntimeError):
     pass
 
 
+SUPPORT_IMAGE_CONTENT_ID = "ceacstatusbot-support-qr"
+
+
+def getSupportImagePath() -> Path:
+    return Path(__file__).resolve().parents[2] / "frontend" / "public" / "support" / "buy-me-a-coffee.jpg"
+
+
+def buildSupportFooterPlain() -> str:
+    return "\n".join(
+        [
+            "",
+            "支持这个非盈利项目：如果 CEACStatusBot 对你有帮助，欢迎自愿扫码赞赏，支持服务器和维护成本。",
+            "赞赏码图片见本邮件 HTML 版本；如果邮件客户端未显示图片，也可以登录网站查看赞赏码。",
+            f"网站入口：{getSettings().appBaseUrl}",
+            "小字说明：赞赏完全自愿，不购买官方服务，不保证签证结果、护照进度、slot 可用性或预约成功。",
+        ],
+    )
+
+
+def buildEmailHtml(body: str, *, includeSupport: bool = False) -> str:
+    bodyHtml = "<br>".join(escape(line) for line in body.splitlines())
+    supportHtml = ""
+    if includeSupport:
+        supportHtml = f"""
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 16px;" />
+          <div style="font-size:14px;line-height:1.6;color:#111827;">
+            <strong>支持这个非盈利项目</strong>
+            <p style="margin:8px 0 12px;">如果 CEACStatusBot 对你有帮助，欢迎自愿扫码赞赏，支持服务器和维护成本。</p>
+            <img src="cid:{SUPPORT_IMAGE_CONTENT_ID}" alt="支持 CEACStatusBot" style="display:block;width:180px;max-width:100%;height:auto;border-radius:8px;margin:8px 0 12px;" />
+            <p style="margin:0;color:#6b7280;font-size:12px;">赞赏完全自愿，不购买官方服务，不保证签证结果、护照进度、slot 可用性或预约成功。</p>
+          </div>
+        """
+    return f"""<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;">
+    <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;">
+      <div style="font-size:15px;line-height:1.7;">{bodyHtml}</div>
+      {supportHtml}
+    </div>
+  </body>
+</html>"""
+
+
 def sendEmail(
     *,
     fromEmail: str,
@@ -24,12 +70,26 @@ def sendEmail(
     useSsl: bool,
     subject: str,
     body: str,
+    htmlBody: str | None = None,
+    inlineImages: dict[str, Path] | None = None,
 ) -> None:
-    msg = MIMEMultipart()
+    msg = MIMEMultipart("related")
     msg["Subject"] = Header(subject, "utf-8")
     msg["From"] = fromEmail
     msg["To"] = toEmail
-    msg.attach(MIMEText(body, "plain", "utf-8"))
+    alternative = MIMEMultipart("alternative")
+    alternative.attach(MIMEText(body, "plain", "utf-8"))
+    if htmlBody:
+        alternative.attach(MIMEText(htmlBody, "html", "utf-8"))
+    msg.attach(alternative)
+
+    for contentId, imagePath in (inlineImages or {}).items():
+        if not imagePath.exists():
+            continue
+        image = MIMEImage(imagePath.read_bytes())
+        image.add_header("Content-ID", f"<{contentId}>")
+        image.add_header("Content-Disposition", "inline", filename=imagePath.name)
+        msg.attach(image)
 
     client: SMTP | SMTP_SSL
     if useSsl:
@@ -44,7 +104,7 @@ def sendEmail(
         client.quit()
 
 
-def sendSystemEmail(toEmail: str, subject: str, body: str) -> None:
+def sendSystemEmail(toEmail: str, subject: str, body: str, htmlBody: str | None = None, inlineImages: dict[str, Path] | None = None) -> None:
     config = getSystemSmtpConfig()
     if not config["fromEmail"] or not config["password"]:
         print(f"[mail] System email is not configured. Subject: {subject}, To: {toEmail}")
@@ -58,6 +118,8 @@ def sendSystemEmail(toEmail: str, subject: str, body: str) -> None:
         useSsl=config["useSsl"],
         subject=subject,
         body=body,
+        htmlBody=htmlBody,
+        inlineImages=inlineImages,
     )
 
 
@@ -236,8 +298,18 @@ def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None
                 f"登录入口：{getSettings().appBaseUrl}",
             ],
         )
+    status = str(result.get("status", "")).strip().lower()
+    includeSupport = status in {"approved", "issued"}
     body = "\n".join(lines)
-    sendCaseEmail(case, smtpConfig, subject, body, emailType="ceac_status", connection=connection)
+    sendCaseEmail(
+        case,
+        smtpConfig,
+        subject,
+        body,
+        emailType="ceac_status",
+        connection=connection,
+        includeSupport=includeSupport,
+    )
 
 
 def sendPassportSlotNotification(
@@ -327,7 +399,16 @@ def sendPassportSlotStatusEmail(
             "安全提醒：本邮件包含完整 UID/HAL，请勿转发或公开截图。",
         ],
     )
-    sendCaseEmail(case, smtpConfig, subject, "\n".join(lines), emailType="passport_slot", connection=connection)
+    body = "\n".join(lines)
+    sendCaseEmail(
+        case,
+        smtpConfig,
+        subject,
+        body,
+        emailType="passport_slot",
+        connection=connection,
+        includeSupport=True,
+    )
 
 
 def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, issuedAt: str, connection: Any | None = None) -> None:
@@ -344,7 +425,15 @@ def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, A
             "你仍然可以登录网站，在档案详情页手动执行立即查询。",
         ],
     )
-    sendCaseEmail(case, smtpConfig, subject, body, emailType="issued_auto_stop", connection=connection)
+    sendCaseEmail(
+        case,
+        smtpConfig,
+        subject,
+        body,
+        emailType="issued_auto_stop",
+        connection=connection,
+        includeSupport=True,
+    )
 
 
 def sendCaseEmail(
@@ -355,10 +444,14 @@ def sendCaseEmail(
     *,
     emailType: str = "case",
     connection: Any | None = None,
+    includeSupport: bool = False,
 ) -> None:
     userId = int(case["user_id"]) if case.get("user_id") is not None else None
     caseId = int(case["id"]) if case.get("id") is not None else None
     enforceDailyEmailLimit(userId, connection)
+    inlineImages = {SUPPORT_IMAGE_CONTENT_ID: getSupportImagePath()} if includeSupport else None
+    plainBody = body + (buildSupportFooterPlain() if includeSupport else "")
+    htmlBody = buildEmailHtml(body, includeSupport=includeSupport)
     if case["sender_mode"] == "custom" and smtpConfig:
         sendEmail(
             fromEmail=smtpConfig["from_email"],
@@ -368,9 +461,11 @@ def sendCaseEmail(
             port=int(smtpConfig["port"]),
             useSsl=bool(smtpConfig["use_ssl"]),
             subject=subject,
-            body=body,
+            body=plainBody,
+            htmlBody=htmlBody,
+            inlineImages=inlineImages,
         )
         recordEmailDelivery(userId=userId, caseId=caseId, emailType=emailType, recipient=case["receive_email"], subject=subject, connection=connection)
         return
-    sendSystemEmail(case["receive_email"], subject, body)
+    sendSystemEmail(case["receive_email"], subject, plainBody, htmlBody=htmlBody, inlineImages=inlineImages)
     recordEmailDelivery(userId=userId, caseId=caseId, emailType=emailType, recipient=case["receive_email"], subject=subject, connection=connection)
