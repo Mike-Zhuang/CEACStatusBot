@@ -443,9 +443,12 @@ def sendCeacConsecutiveFailureNotification(
     errorCount: int,
     errorMessage: str,
     stopped: bool,
+    slowed: bool = False,
     connection: Any | None = None,
 ) -> None:
     subject = f"[CEAC] {case['application_num']} 连续查询失败 {errorCount} 次"
+    if slowed:
+        subject = f"[CEAC] {case['application_num']} 连续失败已降为每天一次查询"
     if stopped:
         subject = f"[CEAC] {case['application_num']} 已因连续失败停止自动查询"
     lines = [
@@ -458,8 +461,18 @@ def sendCeacConsecutiveFailureNotification(
     if stopped:
         lines.extend(
             [
-                "该档案已经连续 10 次查询失败，系统已自动停止 CEAC 自动查询，避免继续无效请求。",
+                "该档案连续失败后已进入每天一次的降频查询阶段，且 7 天内仍未查询成功。",
+                "系统已自动停止 CEAC 自动查询，避免继续无效请求。",
                 "你仍然可以登录网站核对信息，并手动执行“立即查询”。如果确认信息无误但仍失败，请联系管理员。",
+            ],
+        )
+    elif slowed:
+        lines.extend(
+            [
+                "该档案已经连续 10 次查询失败。",
+                "系统不会立刻停止自动查询，而是先降为每天一次，继续观察 7 天。",
+                "如果 7 天内仍然持续失败且信息没有修改，系统会自动停止该档案的 CEAC 自动查询。",
+                "请尽快登录网站核对办理地点、Application ID 或 Case Number、护照号、姓氏前 5 个字母是否填写正确。",
             ],
         )
     else:
@@ -467,7 +480,7 @@ def sendCeacConsecutiveFailureNotification(
             [
                 "该档案已经至少连续 5 次查询失败。",
                 "请登录网站核对办理地点、Application ID 或 Case Number、护照号、姓氏前 5 个字母是否填写正确。",
-                "如果信息没有修改，后续仍然连续失败到 10 次，系统会自动停止该档案的 CEAC 自动查询。",
+                "如果信息没有修改，后续仍然连续失败到 10 次，系统会先把自动查询降为每天一次；若降频后 7 天内仍然持续失败，系统才会停止该档案的 CEAC 自动查询。",
             ],
         )
     lines.extend(["", f"登录入口：{getSettings().appBaseUrl}"])

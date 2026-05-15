@@ -143,6 +143,7 @@ def initializeDatabase() -> None:
                 ceac_auto_locked_by_passport_slot INTEGER NOT NULL DEFAULT 0,
                 ceac_consecutive_error_count INTEGER NOT NULL DEFAULT 0,
                 ceac_error_notice_sent_at TEXT,
+                ceac_failure_slow_started_at TEXT,
                 email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
                 next_check_at TEXT,
                 last_checked_at TEXT,
@@ -308,6 +309,10 @@ def initializeDatabase() -> None:
         if "ceac_error_notice_sent_at" not in columns:
             connection.execute(
                 "ALTER TABLE ceac_cases ADD COLUMN ceac_error_notice_sent_at TEXT",
+            )
+        if "ceac_failure_slow_started_at" not in columns:
+            connection.execute(
+                "ALTER TABLE ceac_cases ADD COLUMN ceac_failure_slow_started_at TEXT",
             )
         if "last_trigger_type" not in columns:
             connection.execute(

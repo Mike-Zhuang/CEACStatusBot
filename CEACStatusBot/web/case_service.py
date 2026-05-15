@@ -24,6 +24,7 @@ STANDARD_WORKER_PRIORITY = 100
 PREMIUM_WORKER_PRIORITY = 50
 CEAC_FAILURE_NOTICE_THRESHOLD = 5
 CEAC_FAILURE_STOP_THRESHOLD = 10
+CEAC_FAILURE_SLOW_STOP_DAYS = 7
 QUERY_TIMEOUT_ERROR_MESSAGE = (
     "查询运行超过系统设定时间仍未完成，已标记为失败。可能是信息填写有误、CEAC/GTS 服务暂时异常或服务器繁忙；"
     "请核对信息输入是否正确后重试，仍有问题请联系管理员。"
@@ -37,10 +38,15 @@ def isIssuedStatus(status: str | None) -> bool:
 def computeNextCheckAt(base: datetime | None = None, status: str | None = None) -> str:
     base = base or datetime.now(UTC)
     if isIssuedStatus(status):
-        nextDay = (base + timedelta(days=1)).replace(second=0, microsecond=0)
-        return nextDay.replace(hour=random.randint(0, 23), minute=random.randint(0, 59)).isoformat()
+        return computeNextDailyCheckAt(base)
     nextHour = (base + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
     return (nextHour + timedelta(minutes=random.randint(0, 59))).isoformat()
+
+
+def computeNextDailyCheckAt(base: datetime | None = None) -> str:
+    base = base or datetime.now(UTC)
+    nextDay = (base + timedelta(days=1)).replace(second=0, microsecond=0)
+    return nextDay.replace(hour=random.randint(0, 23), minute=random.randint(0, 59)).isoformat()
 
 
 def countRecentCeacFailureRuns(connection: Any, caseId: int) -> int:
@@ -454,6 +460,7 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                     last_trigger_type = ?,
                     ceac_consecutive_error_count = 0,
                     ceac_error_notice_sent_at = NULL,
+                    ceac_failure_slow_started_at = NULL,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -464,14 +471,26 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
             recentFailureRunCount = countRecentCeacFailureRuns(connection, caseId)
             previousConsecutiveFailures = max(previousErrorCount, recentFailureRunCount)
             errorCount = previousConsecutiveFailures + 1
-            shouldStopAuto = errorCount >= CEAC_FAILURE_STOP_THRESHOLD
+            slowStartedValue = str(case.get("ceac_failure_slow_started_at") or "")
+            slowStartedAt = parseIso(slowStartedValue) if slowStartedValue else None
+            shouldEnterSlowMode = errorCount >= CEAC_FAILURE_STOP_THRESHOLD and slowStartedAt is None
+            effectiveSlowStartedAt = finished if shouldEnterSlowMode else slowStartedAt
+            shouldStopAuto = (
+                errorCount >= CEAC_FAILURE_STOP_THRESHOLD
+                and effectiveSlowStartedAt is not None
+                and not shouldEnterSlowMode
+                and finished - effectiveSlowStartedAt >= timedelta(days=CEAC_FAILURE_SLOW_STOP_DAYS)
+            )
             shouldSendFailureNotice = (
                 errorCount >= CEAC_FAILURE_NOTICE_THRESHOLD
                 and not bool(case.get("ceac_error_notice_sent_at"))
+                and not shouldEnterSlowMode
                 and not shouldStopAuto
             )
-            shouldSendStopNotice = shouldStopAuto and previousConsecutiveFailures < CEAC_FAILURE_STOP_THRESHOLD
-            nextCheckAt = None if shouldStopAuto else computeNextCheckAt(finished)
+            shouldSendSlowNotice = shouldEnterSlowMode
+            shouldSendStopNotice = shouldStopAuto
+            nextCheckAt = None if shouldStopAuto else computeNextDailyCheckAt(finished) if errorCount >= CEAC_FAILURE_STOP_THRESHOLD else computeNextCheckAt(finished)
+            slowStartedValue = finishedIso if shouldEnterSlowMode else slowStartedValue
             connection.execute(
                 """
                 UPDATE ceac_cases
@@ -480,6 +499,7 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                     last_trigger_type = ?,
                     is_enabled = CASE WHEN ? THEN 0 ELSE is_enabled END,
                     ceac_consecutive_error_count = ?,
+                    ceac_failure_slow_started_at = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -489,11 +509,12 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                     triggerType,
                     int(shouldStopAuto),
                     errorCount,
+                    slowStartedValue or None,
                     finishedIso,
                     caseId,
                 ),
             )
-            if bool(case["email_notifications_enabled"]) and (shouldSendFailureNotice or shouldSendStopNotice):
+            if bool(case["email_notifications_enabled"]) and (shouldSendFailureNotice or shouldSendSlowNotice or shouldSendStopNotice):
                 try:
                     sendCeacConsecutiveFailureNotification(
                         case,
@@ -501,6 +522,7 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                         errorCount=errorCount,
                         errorMessage=errorMessage,
                         stopped=shouldStopAuto,
+                        slowed=shouldSendSlowNotice,
                         connection=connection,
                     )
                     connection.execute(
