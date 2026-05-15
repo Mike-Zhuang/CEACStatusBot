@@ -133,6 +133,82 @@ systemctl enable --now ceacstatusbot-backend.service
 systemctl enable --now ceacstatusbot-worker.service
 ```
 
+## 零点高峰第二 Worker
+
+GTS `no_slot` 零点窗口会产生秒级任务。默认常驻 1 个 Worker；如果需要在中国时间零点高峰短时提高吞吐，可以增加一个只在高峰窗口运行的第二 Worker。
+
+高峰 Worker 服务 `/etc/systemd/system/ceacstatusbot-worker-peak.service`：
+
+```ini
+[Unit]
+Description=CEACStatusBot Peak Query Worker
+After=network.target ceacstatusbot-backend.service
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/opt/ceacstatusbot
+EnvironmentFile=/opt/ceacstatusbot-runtime/backend.env
+Environment=UV_PYTHON_INSTALL_DIR=/opt/ceacstatusbot-python
+ExecStart=/opt/ceacstatusbot/.venv/bin/python -m CEACStatusBot.web.worker
+Restart=no
+StandardOutput=append:/www/wwwlogs/ceacstatusbot-worker-peak.log
+StandardError=append:/www/wwwlogs/ceacstatusbot-worker-peak.error.log
+TimeoutStopSec=20
+```
+
+启动定时器 `/etc/systemd/system/ceacstatusbot-worker-peak-start.timer`：
+
+```ini
+[Unit]
+Description=Start CEACStatusBot peak worker before GTS midnight window
+
+[Timer]
+OnCalendar=*-*-* 23:58:30
+Persistent=false
+Unit=ceacstatusbot-worker-peak.service
+
+[Install]
+WantedBy=timers.target
+```
+
+停止服务 `/etc/systemd/system/ceacstatusbot-worker-peak-stop.service`：
+
+```ini
+[Unit]
+Description=Stop CEACStatusBot peak worker after GTS midnight window
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl stop ceacstatusbot-worker-peak.service
+```
+
+停止定时器 `/etc/systemd/system/ceacstatusbot-worker-peak-stop.timer`：
+
+```ini
+[Unit]
+Description=Stop CEACStatusBot peak worker after GTS midnight window
+
+[Timer]
+OnCalendar=*-*-* 00:04:00
+Persistent=false
+Unit=ceacstatusbot-worker-peak-stop.service
+
+[Install]
+WantedBy=timers.target
+```
+
+启用：
+
+```bash
+systemctl daemon-reload
+systemctl enable --now ceacstatusbot-worker-peak-start.timer
+systemctl enable --now ceacstatusbot-worker-peak-stop.timer
+```
+
+这样普通时段仍是 1 个 Worker，零点高峰窗口短时变成 2 个 Worker。
+
 ## Nginx 策略
 
 生产域名：

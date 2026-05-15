@@ -8,7 +8,7 @@ from CEACStatusBot.request import query_status
 
 from .config import getSettings
 from .database import getConnection, utcNowIso
-from .mailer import sendCaseNotification, sendIssuedAutoStopNotification
+from .mailer import sendCaseNotification, sendCeacConsecutiveFailureNotification, sendIssuedAutoStopNotification
 from .passport_slot_service import (
     isPassportSlotTrigger,
     runPassportSlotQuery,
@@ -22,6 +22,8 @@ STANDARD_CASE_LIMIT = 1
 PREMIUM_CASE_LIMIT = 5
 STANDARD_WORKER_PRIORITY = 100
 PREMIUM_WORKER_PRIORITY = 50
+CEAC_FAILURE_NOTICE_THRESHOLD = 5
+CEAC_FAILURE_STOP_THRESHOLD = 10
 QUERY_TIMEOUT_ERROR_MESSAGE = (
     "查询运行超过系统设定时间仍未完成，已标记为失败。可能是信息填写有误、CEAC/GTS 服务暂时异常或服务器繁忙；"
     "请核对信息输入是否正确后重试，仍有问题请联系管理员。"
@@ -69,6 +71,7 @@ def normalizeCaseRow(row: dict[str, Any]) -> dict[str, Any]:
         "senderMode": row["sender_mode"],
         "isEnabled": bool(row["is_enabled"]),
         "ceacAutoLockedByPassportSlot": bool(row.get("ceac_auto_locked_by_passport_slot", 0)),
+        "ceacConsecutiveErrorCount": int(row.get("ceac_consecutive_error_count") or 0),
         "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
         "nextCheckAt": row["next_check_at"],
         "lastCheckedAt": row["last_checked_at"],
@@ -425,16 +428,58 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
             connection.execute(
                 """
                 UPDATE ceac_cases
-                SET last_checked_at = ?, next_check_at = ?, last_status_id = ?, last_trigger_type = ?, updated_at = ?
+                SET last_checked_at = ?,
+                    next_check_at = ?,
+                    last_status_id = ?,
+                    last_trigger_type = ?,
+                    ceac_consecutive_error_count = 0,
+                    ceac_error_notice_sent_at = NULL,
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (finishedIso, computeNextCheckAt(finished, str(result.get("status", ""))), statusId, triggerType, finishedIso, caseId),
             )
         else:
+            previousErrorCount = int(case.get("ceac_consecutive_error_count") or 0)
+            errorCount = previousErrorCount + 1
+            shouldStopAuto = errorCount >= CEAC_FAILURE_STOP_THRESHOLD
+            nextCheckAt = None if shouldStopAuto else computeNextCheckAt(finished)
             connection.execute(
-                "UPDATE ceac_cases SET last_checked_at = ?, next_check_at = ?, last_trigger_type = ?, updated_at = ? WHERE id = ?",
-                (finishedIso, computeNextCheckAt(finished), triggerType, finishedIso, caseId),
+                """
+                UPDATE ceac_cases
+                SET last_checked_at = ?,
+                    next_check_at = ?,
+                    last_trigger_type = ?,
+                    is_enabled = CASE WHEN ? THEN 0 ELSE is_enabled END,
+                    ceac_consecutive_error_count = ?,
+                    ceac_error_notice_sent_at = CASE WHEN ? THEN ? ELSE ceac_error_notice_sent_at END,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    finishedIso,
+                    nextCheckAt,
+                    triggerType,
+                    int(shouldStopAuto),
+                    errorCount,
+                    int(errorCount == CEAC_FAILURE_NOTICE_THRESHOLD),
+                    finishedIso,
+                    finishedIso,
+                    caseId,
+                ),
             )
+            if bool(case["email_notifications_enabled"]) and errorCount in {CEAC_FAILURE_NOTICE_THRESHOLD, CEAC_FAILURE_STOP_THRESHOLD}:
+                try:
+                    sendCeacConsecutiveFailureNotification(
+                        case,
+                        smtpConfig,
+                        errorCount=errorCount,
+                        errorMessage=errorMessage,
+                        stopped=shouldStopAuto,
+                        connection=connection,
+                    )
+                except Exception as exc:
+                    errorMessage = f"{errorMessage}; Notification failed: {exc}" if errorMessage else f"Notification failed: {exc}"
         connection.execute(
             """
             INSERT INTO query_runs (case_id, started_at, finished_at, success, status_id, error_message, duration_ms, trigger_type)

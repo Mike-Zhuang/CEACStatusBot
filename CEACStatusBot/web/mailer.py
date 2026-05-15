@@ -436,6 +436,52 @@ def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, A
     )
 
 
+def sendCeacConsecutiveFailureNotification(
+    case: dict[str, Any],
+    smtpConfig: dict[str, Any] | None,
+    *,
+    errorCount: int,
+    errorMessage: str,
+    stopped: bool,
+    connection: Any | None = None,
+) -> None:
+    subject = f"[CEAC] {case['application_num']} 连续查询失败 {errorCount} 次"
+    if stopped:
+        subject = f"[CEAC] {case['application_num']} 已因连续失败停止自动查询"
+    lines = [
+        f"档案：{case['display_name']}",
+        f"申请号：{case['application_num']}",
+        f"连续失败次数：{errorCount}",
+        f"最近失败原因：{errorMessage or 'CEAC 查询失败'}",
+        "",
+    ]
+    if stopped:
+        lines.extend(
+            [
+                "该档案已经连续 10 次查询失败，系统已自动停止 CEAC 自动查询，避免继续无效请求。",
+                "你仍然可以登录网站核对信息，并手动执行“立即查询”。如果确认信息无误但仍失败，请联系管理员。",
+            ],
+        )
+    else:
+        lines.extend(
+            [
+                "该档案已经连续 5 次查询失败。",
+                "请登录网站核对办理地点、Application ID 或 Case Number、护照号、姓氏前 5 个字母是否填写正确。",
+                "如果信息没有修改，后续仍然连续失败到 10 次，系统会自动停止该档案的 CEAC 自动查询。",
+            ],
+        )
+    lines.extend(["", f"登录入口：{getSettings().appBaseUrl}"])
+    sendCaseEmail(
+        case,
+        smtpConfig,
+        subject,
+        "\n".join(lines),
+        emailType="ceac_consecutive_failure",
+        connection=connection,
+        includeSupport=False,
+    )
+
+
 def sendCaseEmail(
     case: dict[str, Any],
     smtpConfig: dict[str, Any] | None,

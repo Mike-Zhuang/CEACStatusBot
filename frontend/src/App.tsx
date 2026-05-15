@@ -45,6 +45,7 @@ interface CeacCase {
   senderMode: "system" | "custom";
   isEnabled: boolean;
   ceacAutoLockedByPassportSlot: boolean;
+  ceacConsecutiveErrorCount: number;
   emailNotificationsEnabled: boolean;
   nextCheckAt: string | null;
   lastCheckedAt: string | null;
@@ -276,6 +277,7 @@ const translations = {
     lastCheckMode: "Last query mode",
     lastCheckedAt: "Last updated",
     lastCeacError: "Latest CEAC query issue",
+    ceacConsecutiveErrors: "Consecutive CEAC failures",
     lastQuery: "Last query",
     location: "Select a location",
     locationMetric: "Location",
@@ -453,6 +455,7 @@ const translations = {
     lastCheckMode: "上次抓取方式",
     lastCheckedAt: "上次更新时间",
     lastCeacError: "最近 CEAC 查询问题",
+    ceacConsecutiveErrors: "连续 CEAC 失败次数",
     lastQuery: "最近查询",
     location: "选择面签地点",
     locationMetric: "办理地点",
@@ -1568,6 +1571,9 @@ export function App() {
                       {selectedCase.lastCeacError && (
                         <div className="notice">
                           <strong>{t("lastCeacError")}：</strong>{selectedCase.lastCeacError}
+                          {selectedCase.ceacConsecutiveErrorCount > 0 && (
+                            <span> · {t("ceacConsecutiveErrors")}：{selectedCase.ceacConsecutiveErrorCount}</span>
+                          )}
                         </div>
                       )}
                       <div className="two-col metric-grid">
