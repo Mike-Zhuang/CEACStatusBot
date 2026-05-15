@@ -538,6 +538,40 @@ def updateMe(payload: ProfileUpdateRequest, request: Request, response: Response
     return {"user": publicUser}
 
 
+@app.post("/api/me/terms-acceptance")
+def acceptCurrentTerms(request: Request, user: dict = Depends(currentUserDependency)) -> dict:
+    nowIso = utcNowIso()
+    hashes = requestActorHashes(request, str(user.get("email") or ""))
+    with getConnection() as connection:
+        connection.execute(
+            """
+            UPDATE users
+            SET terms_version = ?,
+                terms_accepted_at = ?,
+                terms_acceptance_ip_hash = ?,
+                terms_acceptance_device_hash = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                TERMS_VERSION,
+                nowIso,
+                hashes["ip_hash"],
+                hashes["device_hash"],
+                nowIso,
+                user["id"],
+            ),
+        )
+    logSecurityEvent(
+        eventType="terms_accepted",
+        request=request,
+        userId=int(user["id"]),
+        email=str(user.get("email") or ""),
+        detail={"termsVersion": TERMS_VERSION, "source": "view_terms"},
+    )
+    return {"ok": True, "termsVersion": TERMS_VERSION, "acceptedAt": nowIso}
+
+
 @app.get("/api/cases")
 def apiListCases(user: dict = Depends(currentUserDependency)) -> dict:
     return {"cases": listCases(int(user["id"]))}

@@ -392,9 +392,9 @@ const translations = {
     termsTitle: "Terms of Use and Disclaimer",
     termsBody: "Please review the full terms before creating an account. Registration means you confirm authorization to submit the information, accept the non-official and nonprofit nature of this service, and understand the third-party and no-guarantee limitations.",
     termsVersion: "Version",
-    viewTerms: "View full terms",
+    viewTerms: "View and accept full terms",
     closeTerms: "Close terms",
-    profileTermsIntro: "You can review the current Terms of Use and Disclaimer here at any time.",
+    profileTermsIntro: "You can review the current Terms of Use and Disclaimer here at any time. Opening the full terms while signed in records acceptance of the current version.",
     applicationId: "Application ID or Case Number",
     autoMonitor: "Enable automatic monitoring",
     caseCreated: "Visa profile created.",
@@ -593,9 +593,9 @@ const translations = {
     termsTitle: "用户条款和免责声明",
     termsBody: "创建账号前请先查看完整条款。注册即表示你确认提交信息已获授权，理解本站非官方、非盈利的服务性质，并接受第三方依赖和不保证事项。",
     termsVersion: "版本",
-    viewTerms: "查看完整条款",
+    viewTerms: "查看并同意完整条款",
     closeTerms: "关闭条款",
-    profileTermsIntro: "你可以随时在这里查看当前用户条款和免责声明。",
+    profileTermsIntro: "你可以随时在这里查看当前用户条款和免责声明。登录后打开完整条款，即记录为同意当前版本。",
     applicationId: "Application ID 或 Case Number",
     autoMonitor: "启用自动监控",
     caseCreated: "签证档案已创建。",
@@ -1198,6 +1198,12 @@ export function App() {
     }
   }
 
+  async function acceptCurrentTerms() {
+    await requestJson<{ ok: boolean; termsVersion: string; acceptedAt: string }>("/api/me/terms-acceptance", {
+      method: "POST",
+    });
+  }
+
   async function saveCase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
@@ -1627,7 +1633,14 @@ export function App() {
                   <span>{t("termsTitle")}</span>
                 </div>
                 <p>{t("termsBody")}</p>
-                <button type="button" className="text-button terms-link-button" onClick={() => setIsTermsDialogOpen(true)}>
+                <button
+                  type="button"
+                  className="text-button terms-link-button"
+                  onClick={() => {
+                    setAcceptedTerms(true);
+                    setIsTermsDialogOpen(true);
+                  }}
+                >
                   {t("viewTerms")}
                 </button>
                 <label className="checkbox">
@@ -1875,6 +1888,7 @@ export function App() {
             profileForm={profileForm}
             setProfileForm={setProfileForm}
             saveProfile={saveProfile}
+            acceptCurrentTerms={acceptCurrentTerms}
             isBusy={isBusy}
             t={t}
             languageMode={languageMode}
@@ -2230,12 +2244,21 @@ function ProfilePanel(props: {
   profileForm: ProfileForm;
   setProfileForm: React.Dispatch<React.SetStateAction<ProfileForm>>;
   saveProfile: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  acceptCurrentTerms: () => Promise<void>;
   isBusy: boolean;
   t: (key: TranslationKey) => string;
   languageMode: LanguageMode;
 }) {
   const form = props.profileForm;
   const [isTermsDialogOpen, setIsTermsDialogOpen] = useState(false);
+  const openTerms = async () => {
+    try {
+      await props.acceptCurrentTerms();
+    } catch {
+      // 条款弹窗本身仍可查看；后台记录失败会在下一次点击时重试。
+    }
+    setIsTermsDialogOpen(true);
+  };
   return (
     <section className="panel narrow-panel profile-panel">
       <div className="panel-title">
@@ -2251,7 +2274,7 @@ function ProfilePanel(props: {
           <span>{props.t("termsTitle")}</span>
         </div>
         <p>{props.t("profileTermsIntro")}</p>
-        <button type="button" className="button secondary compact-button" onClick={() => setIsTermsDialogOpen(true)}>
+        <button type="button" className="button secondary compact-button" onClick={openTerms}>
           {props.t("viewTerms")}
         </button>
       </div>

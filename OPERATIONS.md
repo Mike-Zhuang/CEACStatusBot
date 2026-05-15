@@ -151,6 +151,8 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
 
 同一区域还会展示“未来预计入队”任务，这部分来自 CEAC 档案和 GTS 监控的 `next_check_at`，用于预判接下来哪些账号、档案和查询类型会进入 Worker 队列。已经存在 queued/running 任务的档案不会重复出现在未来预览中。
 
+用户在个人信息页打开完整用户条款时，系统会写入当前条款版本、接受时间、IP 摘要和设备摘要到 `users.terms_*` 字段，并记录 `terms_accepted` 安全事件。
+
 ## 备份
 
 建议至少备份三类文件：
