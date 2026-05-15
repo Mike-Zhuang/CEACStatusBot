@@ -18,7 +18,7 @@ This project is a modified version released under the GPLv3 license. It preserve
 
 - FastAPI backend, SQLite database, APScheduler queue scheduler, and a standalone Worker for query jobs.
 - React + Vite + TypeScript frontend console with dark/light themes and Chinese/English language switching.
-- Open registration with email verification for both signup and password reset. New registrations must explicitly accept the user terms and disclaimer; existing accounts are not forced through a retroactive prompt.
+- Open registration with email verification for both signup and password reset. New registrations must explicitly accept the user terms and disclaimer after opening a formal, sectioned terms dialog; existing accounts are not forced through a retroactive prompt, but the same terms remain available from the account page.
 - Standard accounts can create 1 CEAC profile, and automatic checks still run about once per hour; after `Issued`, checks slow to once per day and stop after one week. Standard accounts get 1 manual refresh per day and a limited daily email quota. Premium accounts can create 5 profiles and use high query/email quotas. Admins are exempt.
 - Enabled profiles are queued once per hour at a random minute. After a profile enters `Issued`, automatic CEAC checks slow down to once per day and stop automatically after one week.
 - The public login page shows a non-official, nonprofit, learning/research-use notice instead of donation QR content. The donation QR remains available only after login and in positive status / GTS notification emails.

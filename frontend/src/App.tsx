@@ -14,6 +14,7 @@ import {
   Sun,
   Trash2,
   UserRound,
+  X,
 } from "lucide-react";
 import { ceacLocations } from "./locations";
 
@@ -265,6 +266,112 @@ function createEmptyCaseForm(defaultEmail = ""): CaseForm {
 const icpRecordNumber = import.meta.env.VITE_ICP_RECORD_NUMBER as string | undefined;
 const QUERY_JOB_POLL_INTERVAL_MS = 2000;
 const QUERY_JOB_QUEUE_WAIT_MS = 180000;
+const USER_TERMS_VERSION_LABEL = "2026-05-15";
+
+const legalTerms = {
+  en: [
+    {
+      title: "1. Nature of Service and Non-official Status",
+      body: [
+        "CEACStatusBot is a nonprofit personal project for learning, research, and convenience tooling for the site owner and authorized users. It is not affiliated with, endorsed by, sponsored by, or operated by the U.S. Department of State, CEAC, GTS, CITIC Bank, any consulate, embassy, visa center, or other official institution.",
+        "This site does not provide visa agency services, official appointment services, legal services, immigration consulting, paid official processing, automatic booking, slot holding, or slot grabbing.",
+      ],
+    },
+    {
+      title: "2. User Authorization and Required Information",
+      body: [
+        "By registering, creating a profile, or enabling monitoring, you confirm that you are the data subject or have obtained lawful authorization from the data subject, and you authorize this site to process the information you submit only for CEAC status checking, GTS slot detection, email notification, account operation, abuse prevention, security audit, and necessary maintenance.",
+        "You are responsible for the accuracy, legality, and authorization status of Application ID / Case Number, passport number, surname initials, UID/HAL, email address, and related information submitted by you.",
+      ],
+    },
+    {
+      title: "3. Third-party Dependence and No Guarantee",
+      body: [
+        "CEAC and GTS are independent third-party websites. Query results may be delayed, unavailable, incomplete, blocked, changed, or incorrect because of third-party maintenance, network conditions, CAPTCHA recognition, rate limits, interface changes, or user input errors.",
+        "This site does not guarantee visa results, passport progress, CEAC status accuracy, slot availability, booking success, query timeliness, uninterrupted service, or that any notification will be received before a slot changes or disappears.",
+      ],
+    },
+    {
+      title: "4. Prohibited Conduct",
+      body: [
+        "You must not attack, probe, scrape, overload, bypass limits, abuse APIs, submit another person's information without authorization, use automated clients outside the provided website, interfere with other users, attempt unauthorized access, or use this site for unlawful, fraudulent, commercial resale, or rights-infringing purposes.",
+        "The administrator may limit, suspend, terminate, delete, or refuse service for accounts, devices, IP addresses, or traffic patterns that appear abusive, risky, unlawful, or harmful to system stability.",
+      ],
+    },
+    {
+      title: "5. Data Protection and User Responsibility",
+      body: [
+        "Sensitive profile fields, UID/HAL, SMTP secrets, and raw query snapshots are encrypted at rest where supported by the application. The site also uses rate limits, session controls, security logs, and other protective measures, but no online system can be guaranteed to be absolutely secure.",
+        "You should keep your account password, UID/HAL, passport information, screenshots, emails, and notification content confidential. Do not forward or publicly post emails or screenshots containing personal or passport-related information.",
+      ],
+    },
+    {
+      title: "6. Service Changes, Limits, and Suspension",
+      body: [
+        "The site may adjust polling frequency, quotas, worker priority, notification behavior, security rules, supported features, or availability at any time for compliance, stability, cost control, anti-abuse, third-party limitations, or maintenance needs.",
+        "Nonprofit support or Premium status is not a purchase of official service and does not create any guarantee regarding official systems, visa outcomes, passport delivery, appointment slots, or booking results.",
+      ],
+    },
+    {
+      title: "7. Limitation of Liability and Contact",
+      body: [
+        "To the maximum extent permitted by applicable law, the site owner is not liable for losses caused by third-party website behavior, query failures, delayed or missed notifications, user input errors, unauthorized use of another person's information, account compromise, service interruption, or reliance on the displayed results.",
+        "For questions, security reports, account issues, or removal requests, contact ceac-admin@mikezhuang.cn.",
+      ],
+    },
+  ],
+  zh: [
+    {
+      title: "一、服务性质与非官方声明",
+      body: [
+        "CEACStatusBot 是非盈利个人项目，主要用于学习研究，以及为站长和经授权用户提供公开状态查询的便利工具。本站不隶属于美国国务院、CEAC、GTS、中信银行、任何使领馆、签证中心或其他官方机构，也不代表上述机构提供服务。",
+        "本站不提供签证代理、官方预约、法律服务、移民咨询、有偿官方代办、自动预约、自动占位或抢 slot 服务。",
+      ],
+    },
+    {
+      title: "二、用户授权与必要信息",
+      body: [
+        "你注册、创建档案或启用监控，即确认你本人为相关信息主体，或已取得信息主体的合法授权；你授权本站仅为 CEAC 状态查询、GTS slot 检测、邮件通知、账号管理、防滥用、安全审计和必要维护处理你提交的信息。",
+        "你应自行确保提交的 Application ID / Case Number、护照号、姓氏前几位、UID/HAL、邮箱和其他信息真实、准确、合法且已获授权。",
+      ],
+    },
+    {
+      title: "三、第三方依赖与不保证事项",
+      body: [
+        "CEAC 和 GTS 均为独立第三方网站。查询结果可能因第三方维护、网络波动、验证码识别、接口限流、页面结构变化或用户输入错误而延迟、不可用、不完整、被拦截或不准确。",
+        "本站不保证签证结果、护照进度、CEAC 状态准确性、slot 可用性、预约成功、查询时效、服务不中断，也不保证任何提醒一定早于 slot 变化或消失送达。",
+      ],
+    },
+    {
+      title: "四、禁止行为",
+      body: [
+        "你不得攻击、探测、爬取、压测、绕过限流、滥用接口、未经授权提交他人信息、使用站外自动化客户端、干扰其他用户、尝试未授权访问，或将本站用于违法违规、欺诈、商业转售、侵权等目的。",
+        "如账号、设备、IP 或流量行为存在滥用、风险、违法嫌疑或影响系统稳定，管理员有权限制、暂停、终止、删除或拒绝提供服务。",
+      ],
+    },
+    {
+      title: "五、数据保护与用户责任",
+      body: [
+        "在应用支持范围内，CEAC 档案敏感字段、UID/HAL、SMTP 密钥和原始查询快照会进行加密存储；本站也会使用限流、会话控制、安全日志等措施降低风险，但任何在线系统都无法承诺绝对安全。",
+        "你应妥善保管账号密码、UID/HAL、护照信息、截图、邮件和通知内容，不应转发或公开包含个人信息、护照信息或预约识别信息的邮件和截图。",
+      ],
+    },
+    {
+      title: "六、服务调整、限额与暂停",
+      body: [
+        "出于合规、稳定性、成本控制、防滥用、第三方限制或维护需要，本站可随时调整查询频率、账号额度、Worker 优先级、通知策略、安全规则、功能范围或服务可用性。",
+        "自愿赞赏或 Premium 状态不构成购买官方服务，也不形成对官方系统、签证结果、护照送达、slot 可用性或预约成功的任何保证。",
+      ],
+    },
+    {
+      title: "七、责任限制与联系方式",
+      body: [
+        "在适用法律允许的最大范围内，站长不对第三方网站行为、查询失败、通知延迟或未送达、用户输入错误、未经授权使用他人信息、账号泄露、服务中断或用户依赖页面结果造成的损失承担责任。",
+        "如需咨询、反馈安全问题、处理账号事项或请求删除信息，请联系 ceac-admin@mikezhuang.cn。",
+      ],
+    },
+  ],
+} as const;
 
 const translations = {
   en: {
@@ -283,7 +390,11 @@ const translations = {
     publicNoticeDisclaimer: "This site does not provide visa agency services, official appointment services, automatic booking, slot holding, result guarantees, or any official government or bank service. Query results depend on third-party websites and may be delayed, unavailable, incomplete, or incorrect.",
     acceptTerms: "I have read and agree to the Terms of Use and Disclaimer.",
     termsTitle: "Terms of Use and Disclaimer",
-    termsBody: "By registering, you voluntarily provide the required information and authorize this site to use it only for CEAC status checking, GTS slot detection, notifications, security auditing, and necessary account operations. This is a non-official nonprofit personal project, not a visa agency, official service, or automatic booking service. You must not attack, abuse, batch scrape, share another person's data without authorization, or use this site for unlawful purposes. CEAC and GTS are third-party services; this site does not guarantee visa results, passport progress, slot availability, booking success, timeliness, completeness, or uninterrupted service. Please protect your UID/HAL/passport information.",
+    termsBody: "Please review the full terms before creating an account. Registration means you confirm authorization to submit the information, accept the non-official and nonprofit nature of this service, and understand the third-party and no-guarantee limitations.",
+    termsVersion: "Version",
+    viewTerms: "View full terms",
+    closeTerms: "Close terms",
+    profileTermsIntro: "You can review the current Terms of Use and Disclaimer here at any time. Existing accounts are not forced to accept again.",
     applicationId: "Application ID or Case Number",
     autoMonitor: "Enable automatic monitoring",
     caseCreated: "Visa profile created.",
@@ -480,7 +591,11 @@ const translations = {
     publicNoticeDisclaimer: "本站不提供签证代理、官方预约、自动抢号、占位、结果保证或任何官方/银行服务。查询结果依赖第三方网站，可能存在延迟、不可用、不完整或错误。",
     acceptTerms: "我已阅读并同意用户条款和免责声明。",
     termsTitle: "用户条款和免责声明",
-    termsBody: "注册即表示你确认自愿提供必要信息，并授权本站仅用于 CEAC 状态查询、GTS slot 检测、邮件通知、安全审计和必要账号操作。你理解本站为非官方、非盈利个人项目，不是签证代理、官方服务或自动预约服务。你不得攻击、滥用、批量抓取、未经授权提交他人信息，或将本站用于违法违规目的。CEAC 和 GTS 均为第三方服务；本站不保证签证结果、护照进度、slot 可用性、预约成功、时效性、完整性或服务不中断。请妥善保护 UID/HAL/护照等个人信息。",
+    termsBody: "创建账号前请先查看完整条款。注册即表示你确认提交信息已获授权，理解本站非官方、非盈利的服务性质，并接受第三方依赖和不保证事项。",
+    termsVersion: "版本",
+    viewTerms: "查看完整条款",
+    closeTerms: "关闭条款",
+    profileTermsIntro: "你可以随时在这里查看当前用户条款和免责声明；既有账号不会被强制重新同意。",
     applicationId: "Application ID 或 Case Number",
     autoMonitor: "启用自动监控",
     caseCreated: "签证档案已创建。",
@@ -838,6 +953,7 @@ export function App() {
   const [rememberPassword, setRememberPassword] = useState(rememberedCredentials.rememberPassword);
   const [registerCode, setRegisterCode] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [isTermsDialogOpen, setIsTermsDialogOpen] = useState(false);
   const [resetCode, setResetCode] = useState("");
   const [resetConfirmPassword, setResetConfirmPassword] = useState("");
   const [message, setMessage] = useState<{ scope: MessageScope; text: string } | null>(null);
@@ -1511,6 +1627,9 @@ export function App() {
                   <span>{t("termsTitle")}</span>
                 </div>
                 <p>{t("termsBody")}</p>
+                <button type="button" className="text-button terms-link-button" onClick={() => setIsTermsDialogOpen(true)}>
+                  {t("viewTerms")}
+                </button>
                 <label className="checkbox">
                   <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} required />
                   <span className="body-sm">{t("acceptTerms")}</span>
@@ -1543,6 +1662,7 @@ export function App() {
         </section>
         <PublicNoticePanel t={t} />
         <SiteFooter t={t} />
+        {isTermsDialogOpen && <TermsDialog t={t} languageMode={languageMode} onClose={() => setIsTermsDialogOpen(false)} />}
       </main>
     );
   }
@@ -1818,6 +1938,46 @@ function PublicNoticePanel(props: { t: (key: TranslationKey) => string }) {
   );
 }
 
+function TermsDialog(props: { t: (key: TranslationKey) => string; languageMode: LanguageMode; onClose: () => void }) {
+  const sections = legalTerms[props.languageMode];
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={props.onClose}>
+      <section
+        className="modal-panel terms-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="terms-dialog-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-header">
+          <div>
+            <h2 id="terms-dialog-title" className="headline">{props.t("termsTitle")}</h2>
+            <p className="form-intro compact">{props.t("termsVersion")}: {USER_TERMS_VERSION_LABEL}</p>
+          </div>
+          <button type="button" className="icon-button" onClick={props.onClose} aria-label={props.t("closeTerms")}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="terms-content">
+          {sections.map((section) => (
+            <section key={section.title} className="terms-section">
+              <h3>{section.title}</h3>
+              {section.body.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+            </section>
+          ))}
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="button primary" onClick={props.onClose}>
+            {props.t("closeTerms")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SiteFooter(props: { t: (key: TranslationKey) => string }) {
   return (
     <footer className="site-footer">
@@ -2075,6 +2235,7 @@ function ProfilePanel(props: {
   languageMode: LanguageMode;
 }) {
   const form = props.profileForm;
+  const [isTermsDialogOpen, setIsTermsDialogOpen] = useState(false);
   return (
     <section className="panel narrow-panel profile-panel">
       <div className="panel-title">
@@ -2083,6 +2244,16 @@ function ProfilePanel(props: {
       <div className="account-tier-card">
         <Metric label={props.t("accountTierCurrent")} value={formatAccountTier(props.user.account_tier, props.t)} />
         <p className="form-intro compact">{props.t("accountTierLimits")}</p>
+      </div>
+      <div className="terms-profile-card">
+        <div className="support-title">
+          <Shield size={16} />
+          <span>{props.t("termsTitle")}</span>
+        </div>
+        <p>{props.t("profileTermsIntro")}</p>
+        <button type="button" className="button secondary compact-button" onClick={() => setIsTermsDialogOpen(true)}>
+          {props.t("viewTerms")}
+        </button>
       </div>
       <form className="stack" onSubmit={props.saveProfile}>
         <label>
@@ -2130,6 +2301,7 @@ function ProfilePanel(props: {
           <button className="button primary" disabled={props.isBusy}>{props.t("save")}</button>
         </div>
       </form>
+      {isTermsDialogOpen && <TermsDialog t={props.t} languageMode={props.languageMode} onClose={() => setIsTermsDialogOpen(false)} />}
     </section>
   );
 }
