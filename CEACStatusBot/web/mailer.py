@@ -465,7 +465,7 @@ def sendCeacConsecutiveFailureNotification(
     else:
         lines.extend(
             [
-                "该档案已经连续 5 次查询失败。",
+                "该档案已经至少连续 5 次查询失败。",
                 "请登录网站核对办理地点、Application ID 或 Case Number、护照号、姓氏前 5 个字母是否填写正确。",
                 "如果信息没有修改，后续仍然连续失败到 10 次，系统会自动停止该档案的 CEAC 自动查询。",
             ],

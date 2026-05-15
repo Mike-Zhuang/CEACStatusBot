@@ -43,6 +43,26 @@ def computeNextCheckAt(base: datetime | None = None, status: str | None = None) 
     return (nextHour + timedelta(minutes=random.randint(0, 59))).isoformat()
 
 
+def countRecentCeacFailureRuns(connection: Any, caseId: int) -> int:
+    rows = connection.execute(
+        """
+        SELECT success
+        FROM query_runs
+        WHERE case_id = ?
+          AND trigger_type IN ('manual', 'automatic')
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (caseId, CEAC_FAILURE_STOP_THRESHOLD),
+    ).fetchall()
+    count = 0
+    for row in rows:
+        if int(row["success"]):
+            break
+        count += 1
+    return count
+
+
 def parseIso(value: str) -> datetime:
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
@@ -441,8 +461,16 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
             )
         else:
             previousErrorCount = int(case.get("ceac_consecutive_error_count") or 0)
-            errorCount = previousErrorCount + 1
+            recentFailureRunCount = countRecentCeacFailureRuns(connection, caseId)
+            previousConsecutiveFailures = max(previousErrorCount, recentFailureRunCount)
+            errorCount = previousConsecutiveFailures + 1
             shouldStopAuto = errorCount >= CEAC_FAILURE_STOP_THRESHOLD
+            shouldSendFailureNotice = (
+                errorCount >= CEAC_FAILURE_NOTICE_THRESHOLD
+                and not bool(case.get("ceac_error_notice_sent_at"))
+                and not shouldStopAuto
+            )
+            shouldSendStopNotice = shouldStopAuto and previousConsecutiveFailures < CEAC_FAILURE_STOP_THRESHOLD
             nextCheckAt = None if shouldStopAuto else computeNextCheckAt(finished)
             connection.execute(
                 """
@@ -452,7 +480,6 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                     last_trigger_type = ?,
                     is_enabled = CASE WHEN ? THEN 0 ELSE is_enabled END,
                     ceac_consecutive_error_count = ?,
-                    ceac_error_notice_sent_at = CASE WHEN ? THEN ? ELSE ceac_error_notice_sent_at END,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -462,13 +489,11 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                     triggerType,
                     int(shouldStopAuto),
                     errorCount,
-                    int(errorCount == CEAC_FAILURE_NOTICE_THRESHOLD),
-                    finishedIso,
                     finishedIso,
                     caseId,
                 ),
             )
-            if bool(case["email_notifications_enabled"]) and errorCount in {CEAC_FAILURE_NOTICE_THRESHOLD, CEAC_FAILURE_STOP_THRESHOLD}:
+            if bool(case["email_notifications_enabled"]) and (shouldSendFailureNotice or shouldSendStopNotice):
                 try:
                     sendCeacConsecutiveFailureNotification(
                         case,
@@ -477,6 +502,10 @@ def runCaseQuery(caseId: int, triggerType: str = "automatic") -> dict[str, Any]:
                         errorMessage=errorMessage,
                         stopped=shouldStopAuto,
                         connection=connection,
+                    )
+                    connection.execute(
+                        "UPDATE ceac_cases SET ceac_error_notice_sent_at = ?, updated_at = ? WHERE id = ?",
+                        (finishedIso, finishedIso, caseId),
                     )
                 except Exception as exc:
                     errorMessage = f"{errorMessage}; Notification failed: {exc}" if errorMessage else f"Notification failed: {exc}"
