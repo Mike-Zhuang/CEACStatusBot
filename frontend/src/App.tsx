@@ -359,6 +359,7 @@ const translations = {
     visaTypeNiv: "Nonimmigrant Visa (NIV)",
     waitFirstQuery: "Waiting for first query",
     queryHint: "Please select a location and enter your Application ID or Case Number.",
+    queryQueued: "Your query is queued because another task is being processed. The task ahead should finish soon, and your query will start automatically. Please do not click repeatedly.",
     queryInProgress: "Querying CEAC. Please wait.",
     pre2022Note: "NOTE: For applicants who completed their forms prior to January 1, 2022, please put NA into the Passport and Surname fields.",
     passportSlotMonitor: "Passport appointment monitor",
@@ -379,6 +380,7 @@ const translations = {
     passportSlotTestEmail: "Test GTS email",
     passportSlotTestEmailSending: "Sending GTS monitor test email.",
     passportSlotTestEmailSent: "GTS monitor test email sent.",
+    passportSlotQueued: "Your GTS slot query is queued because another task is being processed. The task ahead should finish soon, and your query will start automatically. Please do not click repeatedly.",
     passportSlotQuerying: "Querying GTS slots. Please wait.",
     passportSlotFound: "GTS slot query completed: available slots found.",
     passportSlotNotFound: "GTS slot query completed: no available slot.",
@@ -533,6 +535,7 @@ const translations = {
     visaTypeNiv: "非移民签证（NIV）",
     waitFirstQuery: "等待首次查询",
     queryHint: "请选择面签地点，并输入你的 Application ID 或 Case Number。",
+    queryQueued: "当前有其他查询正在处理，你的查询已加入队列。前方任务很快会处理完毕，轮到你后会自动开始查询，请不要重复点击。",
     queryInProgress: "正在查询 CEAC，请稍候。",
     pre2022Note: "注意：如果你在 2022 年 1 月 1 日之前完成表格，请在护照号码和姓氏字段填写 NA。",
     passportSlotMonitor: "护照预约监控",
@@ -553,6 +556,7 @@ const translations = {
     passportSlotTestEmail: "测试 GTS 邮件",
     passportSlotTestEmailSending: "正在发送 GTS 监控测试邮件。",
     passportSlotTestEmailSent: "GTS 监控测试邮件已发送。",
+    passportSlotQueued: "当前有其他查询正在处理，你的 GTS slot 查询已加入队列。前方任务很快会处理完毕，轮到你后会自动开始查询，请不要重复点击。",
     passportSlotQuerying: "正在查询 GTS slot，请稍候。",
     passportSlotFound: "GTS slot 查询完成：发现可预约时间。",
     passportSlotNotFound: "GTS slot 查询完成：暂无可预约时间。",
@@ -605,12 +609,20 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
   return payload as T;
 }
 
-async function waitForQueryJob(jobId: number): Promise<QueryJob | null> {
+async function waitForQueryJob(
+  jobId: number,
+  onStatusChange?: (status: QueryJob["status"]) => void,
+): Promise<QueryJob | null> {
   let job: QueryJob | null = null;
   const queueWaitStartedAt = Date.now();
+  let lastStatus: QueryJob["status"] | null = null;
   while (true) {
     const jobPayload = await requestJson<{ job: QueryJob }>(`/api/query-jobs/${jobId}`);
     job = jobPayload.job;
+    if (job.status !== lastStatus) {
+      lastStatus = job.status;
+      onStatusChange?.(job.status);
+    }
     if (job.status === "succeeded" || job.status === "failed") {
       break;
     }
@@ -1029,11 +1041,17 @@ export function App() {
         method: "POST",
         body: "{}",
       });
-      const job = await waitForQueryJob(payload.jobId);
+      const job = await waitForQueryJob(payload.jobId, (status) => {
+        if (status === "queued") {
+          showMessage(t("queryQueued"));
+        } else if (status === "running") {
+          showMessage(t("queryInProgress"));
+        }
+      });
       await loadCases();
       await loadHistory(caseId);
       if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
-        showMessage(t("queryInProgress"));
+        showMessage(job?.status === "queued" ? t("queryQueued") : t("queryInProgress"));
         return;
       }
       const result = job.result;
@@ -1185,11 +1203,17 @@ export function App() {
         method: "POST",
         body: "{}",
       });
-      const job = await waitForQueryJob(payload.jobId);
+      const job = await waitForQueryJob(payload.jobId, (status) => {
+        if (status === "queued") {
+          showMessage(t("passportSlotQueued"));
+        } else if (status === "running") {
+          showMessage(t("passportSlotQuerying"));
+        }
+      });
       await loadPassportSlotMonitor(caseId);
       await loadCases();
       if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
-        showMessage(t("passportSlotQuerying"));
+        showMessage(job?.status === "queued" ? t("passportSlotQueued") : t("passportSlotQuerying"));
         return;
       }
       const result = job.result;
