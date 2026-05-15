@@ -494,7 +494,13 @@ def apiListCases(user: dict = Depends(currentUserDependency)) -> dict:
 @app.post("/api/cases")
 def apiCreateCase(payload: CeacCaseInput, user: dict = Depends(currentUserDependency)) -> dict:
     try:
-        return {"case": createCase(int(user["id"]), payload)}
+        case = createCase(int(user["id"]), payload)
+        initialQueryJob = None
+        if payload.isEnabled:
+            job = enqueueCaseQuery(int(case["id"]), "automatic", int(user["id"]))
+            if job:
+                initialQueryJob = {"jobId": job["id"], "status": job["status"]}
+        return {"case": case, "initialQueryJob": initialQueryJob}
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

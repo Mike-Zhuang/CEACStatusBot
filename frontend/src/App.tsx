@@ -1018,13 +1018,38 @@ export function App() {
             }
           : null,
       };
-      const result = await requestJson<{ case: CeacCase }>("/api/cases", {
+      const result = await requestJson<{
+        case: CeacCase;
+        initialQueryJob?: { jobId: number; status: QueryJob["status"] } | null;
+      }>("/api/cases", {
         method: "POST",
         body: JSON.stringify(payload),
       });
       setCaseForm(createEmptyCaseForm(user?.email ?? ""));
       setSelectedCaseId(result.case.id);
       await loadCases();
+      if (result.initialQueryJob) {
+        const job = await waitForQueryJob(result.initialQueryJob.jobId, (status) => {
+          if (status === "queued") {
+            showMessage(t("queryQueued"));
+          } else if (status === "running") {
+            showMessage(t("queryInProgress"));
+          }
+        });
+        await loadCases();
+        await loadHistory(result.case.id);
+        if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
+          showMessage(job?.status === "queued" ? t("queryQueued") : t("queryInProgress"));
+          return;
+        }
+        const queryResult = job.result;
+        showMessage(
+          queryResult?.success
+            ? (queryResult.changed ? t("fastQueryChanged") : t("fastQueryUnchanged"))
+            : (job.errorMessage || queryResult?.error || t("requestFailed")),
+        );
+        return;
+      }
       showMessage(t("caseCreated"));
     } catch (error) {
       showMessage(error instanceof Error ? error.message : t("requestFailed"));

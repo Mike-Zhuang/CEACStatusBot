@@ -23,7 +23,7 @@ This project is a modified version released under the GPLv3 license. It preserve
 - Enabled profiles are queued once per hour at a random minute. After a profile enters `Issued`, automatic CEAC checks slow down to once per day and stop automatically after one week.
 - When a CEAC profile enters `Approved` or `Issued`, status emails invite the user to enter UID/HAL and enable GTS passport appointment slot monitoring.
 - GTS passport appointment monitoring is bound to a CEAC profile. It polls at a random 5-10 minute interval by default, with separate switches for automatic polling and slot-change email notifications. Once slots are found, polling slows to roughly once per hour until the user confirms they have booked and stops monitoring.
-- `Query now` creates manual jobs. The frontend polls job status and refreshes the profile and timeline after completion. Non-admin accounts have a daily manual query limit.
+- Creating an enabled profile automatically queues one initial CEAC query. `Query now` creates manual jobs. The frontend polls job status and refreshes the profile and timeline after completion. Non-admin accounts have a daily manual query limit.
 - No email is sent when status is unchanged. Status changes or CEAC last-updated changes are written to history and trigger notifications.
 - Supports both a system default SMTP sender and per-user custom SMTP settings.
 - Admins can manage account tiers and Worker priority, and view profile summaries, system query logs, security events, and default sender configuration.
@@ -127,7 +127,7 @@ The current web application only needs SMTP. IMAP is not used for status queryin
 
 Each enabled visa profile stores `nextCheckAt`. The scheduler scans due profiles every minute and writes automatic query jobs into the SQLite queue. The standalone Worker consumes the queue, calls CEAC, records query logs, updates status history, and sends email notifications.
 
-`Query now` does not run the scraper directly in the web process. It creates a `manual` job and returns a job ID. The frontend polls job status, then refreshes the profile and status timeline. CEAC `Query now` and GTS `Check slots now` share the same daily manual query quota: Standard accounts default to 1 per day, Premium accounts default to 1000 per day, and admin accounts are exempt. CEAC/GTS business emails also have daily account-level quotas: Standard defaults to 5 per day and Premium defaults to 1000 per day. Worker priority uses smaller numbers first; Premium defaults to 50 and Standard defaults to 100, while admins can override either value.
+Creating an enabled profile automatically queues one initial CEAC query, and this initial automatic query does not consume the daily manual quota. `Query now` does not run the scraper directly in the web process. It creates a `manual` job and returns a job ID. The frontend polls job status, then refreshes the profile and status timeline. CEAC `Query now` and GTS `Check slots now` share the same daily manual query quota: Standard accounts default to 1 per day, Premium accounts default to 1000 per day, and admin accounts are exempt. CEAC/GTS business emails also have daily account-level quotas: Standard defaults to 5 per day and Premium defaults to 1000 per day. Worker priority uses smaller numbers first; Premium defaults to 50 and Standard defaults to 100, while admins can override either value.
 
 The system compares the latest history item with the current CEAC result:
 
