@@ -149,6 +149,8 @@ def createCase(userId: int, payload: CeacCaseInput) -> dict[str, Any]:
         user = connection.execute("SELECT role, account_tier FROM users WHERE id = ?", (userId,)).fetchone()
         if not user:
             raise ValueError("用户不存在")
+        if payload.emailNotificationsEnabled and not payload.receiveEmail:
+            raise ValueError("开启邮件推送时必须填写接收提醒邮箱。")
         if user.get("role") != "admin":
             caseCountRow = connection.execute("SELECT COUNT(*) AS case_count FROM ceac_cases WHERE user_id = ?", (userId,)).fetchone()
             caseCount = int(caseCountRow["case_count"] if caseCountRow else 0)
@@ -172,7 +174,7 @@ def createCase(userId: int, payload: CeacCaseInput) -> dict[str, Any]:
                 encryptSecret(payload.applicationNum),
                 encryptSecret(payload.passportNumber),
                 encryptSecret(payload.surname),
-                encryptSecret(str(payload.receiveEmail)),
+                encryptSecret(str(payload.receiveEmail or "")),
                 payload.senderMode,
                 int(payload.isEnabled),
                 int(payload.emailNotificationsEnabled),
@@ -195,6 +197,10 @@ def patchCase(caseId: int, userId: int, payload: CeacCasePatch, *, allowLockedEn
     data = payload.model_dump(exclude_unset=True)
     if data.get("isEnabled") is True and current.get("ceacAutoLockedByPassportSlot") and not allowLockedEnable:
         raise ValueError("GTS 监控已接管该档案，普通用户不能恢复 CEAC 自动查询；请联系管理员恢复。")
+    nextEmailNotificationsEnabled = data.get("emailNotificationsEnabled", current.get("emailNotificationsEnabled"))
+    nextReceiveEmail = data.get("receiveEmail", current.get("receiveEmail"))
+    if nextEmailNotificationsEnabled and not nextReceiveEmail:
+        raise ValueError("开启邮件推送时必须填写接收提醒邮箱。")
     columnMap = {
         "displayName": "display_name",
         "location": "location",

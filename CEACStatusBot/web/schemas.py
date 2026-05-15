@@ -115,7 +115,7 @@ class CeacCaseInput(SecureModel):
     applicationNum: str = Field(min_length=1)
     passportNumber: str = Field(min_length=1)
     surname: str = Field(min_length=1, max_length=5)
-    receiveEmail: EmailStr
+    receiveEmail: EmailStr | None = None
     senderMode: str = Field(pattern="^(system|custom)$")
     isEnabled: bool = True
     emailNotificationsEnabled: bool = True
@@ -154,6 +154,13 @@ class CeacCaseInput(SecureModel):
         if not SURNAME_PATTERN.match(normalized):
             raise ValueError("姓氏只支持 1-5 个英文字母")
         return normalized
+
+    @field_validator("receiveEmail", mode="before")
+    @classmethod
+    def normalizeReceiveEmail(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class CeacCasePatch(CeacCaseInput):

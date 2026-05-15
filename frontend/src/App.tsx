@@ -225,6 +225,10 @@ const emptyCaseForm: CaseForm = {
   smtpPassword: "",
 };
 
+function createEmptyCaseForm(defaultEmail = ""): CaseForm {
+  return { ...emptyCaseForm, receiveEmail: defaultEmail };
+}
+
 const icpRecordNumber = import.meta.env.VITE_ICP_RECORD_NUMBER as string | undefined;
 
 const translations = {
@@ -745,6 +749,7 @@ export function App() {
       .then((payload) => {
         setUser(payload.user);
         setProfileForm((current) => ({ ...current, email: payload.user.email }));
+        setCaseForm((current) => current.receiveEmail ? current : createEmptyCaseForm(payload.user.email));
         void loadCases();
       })
       .catch(() => undefined);
@@ -895,6 +900,7 @@ export function App() {
       }
       setUser(payload.user);
       setProfileForm({ email: payload.user.email, currentPassword: "", newPassword: "", confirmPassword: "" });
+      setCaseForm((current) => current.receiveEmail ? current : createEmptyCaseForm(payload.user.email));
       await loadCases();
     } catch (error) {
       showMessage(error instanceof Error ? error.message : t("signInFailed"));
@@ -967,7 +973,7 @@ export function App() {
         applicationNum: caseForm.applicationNum,
         passportNumber: caseForm.passportNumber,
         surname: caseForm.surname,
-        receiveEmail: caseForm.receiveEmail,
+        receiveEmail: caseForm.receiveEmail || null,
         senderMode: caseForm.senderMode,
         isEnabled: caseForm.isEnabled,
         emailNotificationsEnabled: caseForm.emailNotificationsEnabled,
@@ -985,7 +991,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      setCaseForm(emptyCaseForm);
+      setCaseForm(createEmptyCaseForm(user?.email ?? ""));
       setSelectedCaseId(result.case.id);
       await loadCases();
       showMessage(t("caseCreated"));
@@ -1441,7 +1447,7 @@ export function App() {
               <section className="panel">
                 <div className="panel-title">
                   <h2 className="headline">{t("caseList")}</h2>
-                  <button className="button secondary" title={t("caseName")} onClick={() => { setSelectedCaseId(null); setCaseForm(emptyCaseForm); }}>
+                  <button className="button secondary" title={t("caseName")} onClick={() => { setSelectedCaseId(null); setCaseForm(createEmptyCaseForm(user.email)); }}>
                     <Plus size={16} /> {t("newProfile")}
                   </button>
                 </div>
@@ -2376,7 +2382,12 @@ function CaseFormView(props: {
         <p className="section-help">{props.t("deliverySection")}</p>
         <label>
           {props.t("deliveryEmail")}
-          <input value={form.receiveEmail} onChange={(e) => setForm({ ...form, receiveEmail: e.target.value.trim() })} type="email" required />
+          <input
+            value={form.receiveEmail}
+            onChange={(e) => setForm({ ...form, receiveEmail: e.target.value.trim() })}
+            type="email"
+            required={form.emailNotificationsEnabled}
+          />
         </label>
 
       <label className="checkbox">
