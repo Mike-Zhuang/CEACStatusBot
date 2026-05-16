@@ -303,7 +303,7 @@ sqlite3 /opt/ceacstatusbot-runtime/ceacstatusbot.sqlite3 \
 - GTS 监控会记录三态：`not_eligible` 表示暂不具备预约资格，`no_slot` 表示已可预约但暂无时间，`has_slot` 表示发现可预约时间。
 - GTS 监控仍为 Beta：系统只检测 GTS 返回结果并通知，不自动预约、不占位、不抢 slot，也不保证结果完整或实时一致。
 - 系统会在 `not_eligible -> no_slot`、`no_slot -> has_slot`、以及 `has_slot` 时间列表变化时发送邮件；首次 `not_eligible` 或首次 `no_slot` 只记录状态。
-- 普通时段约每 25-35 分钟随机查询一次。进入 `no_slot` 后按中国时间零点加频：23:59-00:02 约 15 秒一次，23:59:45-00:00:30 核心窗口约 5 秒一次，并覆盖 00:00:00 和 00:00:02。Worker 建议保持 `WORKER_POLL_INTERVAL_SECONDS=1`。
+- 普通时段约每 1-30 分钟随机查询一次。进入 `no_slot` 后按中国时间零点加频：23:59-00:02 约 15 秒一次，23:59:45-00:00:30 核心窗口约 5 秒一次，并覆盖 00:00:00 和 00:00:02。Worker 建议保持 `WORKER_POLL_INTERVAL_SECONDS=1`。
 - 零点高峰可以临时运行 2 个 Worker：常驻 `ceacstatusbot-worker.service` 加一个只在 23:58-00:04 左右启动的高峰 Worker。不要长期大幅提高并发，避免触发 CEAC/GTS 限流。
 - GTS 接口限流，系统会自动把下一次查询退避到 30-60 分钟后。
 - Worker 无法访问 `https://scheduling-api.gtspremium.com`。

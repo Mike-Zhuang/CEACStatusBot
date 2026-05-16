@@ -85,6 +85,13 @@ def decryptCaseRow(row: dict[str, Any]) -> dict[str, Any]:
 
 def normalizeCaseRow(row: dict[str, Any]) -> dict[str, Any]:
     row = decryptCaseRow(row)
+    passportSlotLastResult = None
+    passportSlotLastResultJson = decryptIfNeeded(row.get("passport_slot_last_result_json") or "") or ""
+    if passportSlotLastResultJson:
+        try:
+            passportSlotLastResult = json.loads(passportSlotLastResultJson)
+        except json.JSONDecodeError:
+            passportSlotLastResult = None
     return {
         "id": row["id"],
         "userId": row["user_id"],
@@ -105,6 +112,15 @@ def normalizeCaseRow(row: dict[str, Any]) -> dict[str, Any]:
         "lastStatus": row.get("last_status"),
         "lastDescription": row.get("last_description"),
         "lastCeacError": row.get("last_ceac_error") or "",
+        "passportSlotMonitor": {
+            "isEnabled": bool(row.get("passport_slot_is_enabled")),
+            "emailNotificationsEnabled": bool(row.get("passport_slot_email_notifications_enabled")),
+            "nextCheckAt": row.get("passport_slot_next_check_at"),
+            "lastCheckedAt": row.get("passport_slot_last_checked_at"),
+            "lastSlotCount": int(row.get("passport_slot_last_slot_count") or 0),
+            "lastResult": passportSlotLastResult,
+            "lastErrorMessage": row.get("passport_slot_last_error_message") or "",
+        } if row.get("passport_slot_monitor_id") is not None else None,
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
@@ -122,6 +138,14 @@ def listCases(userId: int | None = None) -> list[dict[str, Any]]:
             SELECT c.*,
                    s.status AS last_status,
                    s.description AS last_description,
+                   m.id AS passport_slot_monitor_id,
+                   m.is_enabled AS passport_slot_is_enabled,
+                   m.email_notifications_enabled AS passport_slot_email_notifications_enabled,
+                   m.next_check_at AS passport_slot_next_check_at,
+                   m.last_checked_at AS passport_slot_last_checked_at,
+                   m.last_slot_count AS passport_slot_last_slot_count,
+                   m.last_result_json AS passport_slot_last_result_json,
+                   m.last_error_message AS passport_slot_last_error_message,
                    (
                        SELECT r.error_message
                        FROM query_runs r
@@ -132,6 +156,7 @@ def listCases(userId: int | None = None) -> list[dict[str, Any]]:
                    ) AS last_ceac_error
             FROM ceac_cases c
             LEFT JOIN status_catalog s ON s.id = c.last_status_id
+            LEFT JOIN passport_slot_monitors m ON m.case_id = c.id
             {where}
             ORDER BY c.updated_at DESC
             """,
@@ -152,6 +177,14 @@ def getCase(caseId: int, userId: int | None = None) -> dict[str, Any] | None:
             SELECT c.*,
                    s.status AS last_status,
                    s.description AS last_description,
+                   m.id AS passport_slot_monitor_id,
+                   m.is_enabled AS passport_slot_is_enabled,
+                   m.email_notifications_enabled AS passport_slot_email_notifications_enabled,
+                   m.next_check_at AS passport_slot_next_check_at,
+                   m.last_checked_at AS passport_slot_last_checked_at,
+                   m.last_slot_count AS passport_slot_last_slot_count,
+                   m.last_result_json AS passport_slot_last_result_json,
+                   m.last_error_message AS passport_slot_last_error_message,
                    (
                        SELECT r.error_message
                        FROM query_runs r
@@ -162,6 +195,7 @@ def getCase(caseId: int, userId: int | None = None) -> dict[str, Any] | None:
                    ) AS last_ceac_error
             FROM ceac_cases c
             LEFT JOIN status_catalog s ON s.id = c.last_status_id
+            LEFT JOIN passport_slot_monitors m ON m.case_id = c.id
             WHERE c.id = ? {extraWhere}
             """,
             params,

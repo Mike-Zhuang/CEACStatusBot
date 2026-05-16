@@ -54,6 +54,18 @@ interface CeacCase {
   lastStatus: string | null;
   lastDescription: string | null;
   lastCeacError: string;
+  passportSlotMonitor: {
+    isEnabled: boolean;
+    emailNotificationsEnabled: boolean;
+    nextCheckAt: string | null;
+    lastCheckedAt: string | null;
+    lastSlotCount: number;
+    lastResult: {
+      slotStatus?: "not_eligible" | "no_slot" | "has_slot" | "unknown";
+      statusMessage?: string;
+    } | null;
+    lastErrorMessage: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2632,6 +2644,22 @@ function AdminPanel(props: {
                           <span>{item.displayName}</span>
                           <span className="mono-text">{item.applicationNum}</span>
                           <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? props.t("waitFirstQuery")}</span>
+                          {item.passportSlotMonitor && (
+                            <>
+                              <span className={`status-badge ${item.passportSlotMonitor.isEnabled ? "success" : ""}`}>
+                                {formatPassportSlotStatus(item.passportSlotMonitor.lastResult, props.t)}
+                              </span>
+                              <span className="mono-text">
+                                {props.t("passportSlotLastCount")}: {item.passportSlotMonitor.lastSlotCount}
+                              </span>
+                              <span className="mono-text">
+                                {props.t("nextCheckAt")}: {formatTime(item.passportSlotMonitor.nextCheckAt, props.languageMode)}
+                              </span>
+                              {item.passportSlotMonitor.lastErrorMessage && (
+                                <span className="status-badge error">{item.passportSlotMonitor.lastErrorMessage}</span>
+                              )}
+                            </>
+                          )}
                           {item.ceacAutoLockedByPassportSlot && (
                             <button
                               type="button"

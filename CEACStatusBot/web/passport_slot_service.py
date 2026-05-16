@@ -68,7 +68,7 @@ def computeNextPassportSlotCheckAt(
         return (base + timedelta(hours=1)).replace(microsecond=0).isoformat()
     if slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT:
         return computeNextNoSlotCheckAt(base).isoformat()
-    minutes = random.randint(25, 35)
+    minutes = random.randint(1, 30)
     return (base + timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
 
 
@@ -93,7 +93,7 @@ def computeNextNoSlotCheckAt(base: datetime) -> datetime:
         nextWindowStart += timedelta(days=1)
     if nextWindowStart - local <= timedelta(minutes=10):
         return nextWindowStart.astimezone(UTC).replace(microsecond=0)
-    minutes = random.randint(25, 35)
+    minutes = random.randint(1, 30)
     return (base + timedelta(minutes=minutes)).replace(microsecond=0)
 
 
