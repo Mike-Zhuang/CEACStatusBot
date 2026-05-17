@@ -4,6 +4,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import escape
 from pathlib import Path
+import re
 from smtplib import SMTP, SMTP_SSL
 from typing import Any
 from datetime import UTC, datetime, timedelta
@@ -29,6 +30,8 @@ def isKeyValueLine(line: str) -> bool:
             continue
         key, value = line.split(separator, 1)
         key = key.strip()
+        if re.fullmatch(r"[0-9\\/\-:\s]+", key):
+            return False
         if 1 <= len(key) <= 32 and value.strip():
             return True
     return False
@@ -80,14 +83,36 @@ def renderKeyValueTable(lines: list[str]) -> str:
     """
 
 
-def renderTextLines(lines: list[str]) -> str:
-    if len(lines) == 1:
-        return f'<p style="margin:0;color:#334155;font-size:14px;line-height:1.75;">{escape(lines[0])}</p>'
-    items = "".join(
-        f'<li style="margin:0 0 6px;color:#334155;font-size:14px;line-height:1.65;word-break:break-word;">{escape(line)}</li>'
+def renderParagraphLines(lines: list[str], *, color: str = "#334155", fontSize: int = 14, fontWeight: int = 400) -> str:
+    return "".join(
+        f'<p style="margin:0 0 8px;color:{color};font-size:{fontSize}px;font-weight:{fontWeight};line-height:1.7;word-break:break-word;">{escape(line)}</p>'
         for line in lines
     )
-    return f'<ul style="margin:0;padding-left:20px;">{items}</ul>'
+
+
+def renderTextLines(lines: list[str], *, emphasized: bool = False) -> str:
+    if len(lines) == 1:
+        return renderParagraphLines(lines, fontSize=15 if emphasized else 14, fontWeight=600 if emphasized else 400)
+    return renderParagraphLines(lines, fontSize=14, fontWeight=500 if emphasized else 400)
+
+
+def renderContentCard(contentHtml: str, *, tone: str = "neutral") -> str:
+    borderColor = "#c7d2fe" if tone == "highlight" else "#e5e7eb"
+    background = "#f8fafc" if tone == "neutral" else "#eef2ff"
+    return f"""
+      <div style="padding:14px 16px;border:1px solid {borderColor};border-left:4px solid {'#5e6ad2' if tone == 'highlight' else '#cbd5e1'};border-radius:10px;background:{background};">
+        {contentHtml}
+      </div>
+    """
+
+
+def renderSection(title: str, contentHtml: str, *, tone: str = "neutral") -> str:
+    return f"""
+      <section style="margin:24px 0 0;">
+        <h2 style="margin:0 0 8px;color:#64748b;font-size:12px;font-weight:800;line-height:1.3;letter-spacing:0.08em;text-transform:uppercase;">{escape(title)}</h2>
+        {renderContentCard(contentHtml, tone=tone)}
+      </section>
+    """
 
 
 def renderEmailBlocks(body: str) -> str:
@@ -96,28 +121,29 @@ def renderEmailBlocks(body: str) -> str:
     index = 0
     while index < len(blocks):
         block = blocks[index]
-        if len(block) == 1 and isSectionHeading(block[0]):
+        if block and isSectionHeading(block[0]):
             title = block[0].strip()[:-1]
             contentHtml = ""
-            if index + 1 < len(blocks):
+            inlineContent = block[1:]
+            if inlineContent:
+                if all(isKeyValueLine(line) for line in inlineContent):
+                    contentHtml = renderKeyValueTable(inlineContent)
+                else:
+                    contentHtml = renderTextLines(inlineContent, emphasized=len(inlineContent) <= 2)
+            elif index + 1 < len(blocks):
                 nextBlock = blocks[index + 1]
                 if nextBlock and all(isKeyValueLine(line) for line in nextBlock):
                     contentHtml = renderKeyValueTable(nextBlock)
                 else:
-                    contentHtml = renderTextLines(nextBlock)
+                    contentHtml = renderTextLines(nextBlock, emphasized=len(nextBlock) <= 2)
                 index += 1
-            htmlParts.append(
-                f"""
-                <section style="margin:20px 0 0;">
-                  <h2 style="margin:0 0 10px;color:#111827;font-size:15px;line-height:1.4;">{escape(title)}</h2>
-                  {contentHtml}
-                </section>
-                """,
-            )
+            titleTone = "highlight" if any(keyword in title for keyword in ("变化", "摘要", "状态", "可预约", "决定")) else "neutral"
+            htmlParts.append(renderSection(title, contentHtml, tone=titleTone))
         elif all(isKeyValueLine(line) for line in block):
             htmlParts.append(f'<section style="margin:16px 0 0;">{renderKeyValueTable(block)}</section>')
         else:
-            htmlParts.append(f'<section style="margin:16px 0 0;">{renderTextLines(block)}</section>')
+            marginTop = "0" if not htmlParts else "16px"
+            htmlParts.append(f'<section style="margin:{marginTop} 0 0;">{renderTextLines(block)}</section>')
         index += 1
     return "".join(htmlParts)
 
