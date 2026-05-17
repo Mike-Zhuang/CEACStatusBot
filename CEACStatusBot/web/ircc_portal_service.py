@@ -1,0 +1,1229 @@
+import hashlib
+import hmac
+import json
+import random
+import secrets as stdlibSecrets
+import uuid
+from base64 import b64decode, b64encode
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import httpx
+
+from .case_service import PREMIUM_CASE_LIMIT, STANDARD_CASE_LIMIT, upsertSmtpConfig
+from .database import getConnection, utcNowIso
+from .mailer import (
+    buildEmailHtml,
+    getSystemSmtpConfig,
+    recordEmailDelivery,
+    sendEmail,
+)
+from .schemas import IrccCaseInput, IrccCasePatch, IrccDiscoverRequest
+from .secrets import decryptIfNeeded, decryptSecret, encryptSecret
+
+
+IRCC_PORTAL_URL = "https://portal-portail.apps.cic.gc.ca"
+IRCC_API_BASE_URL = "https://api.portal-portail.apps.cic.gc.ca/portal/v1"
+COGNITO_REGION = "ca-central-1"
+COGNITO_CLIENT_ID = "661ccpl4rd23hoo47eub0nt9t3"
+COGNITO_USER_POOL_ID = "ca-central-1_zNXgwqKji"
+COGNITO_POOL_NAME = COGNITO_USER_POOL_ID.split("_", 1)[1]
+COGNITO_ENDPOINT = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/"
+IRCC_QUERY_TRIGGER_PREFIX = "ircc_"
+IRCC_QUERY_TIMEOUT_ERROR_MESSAGE = "IRCC Portal 查询运行超过系统设定时间仍未完成，已标记为失败；请稍后重试或重新验证 IRCC 账号。"
+COGNITO_N_HEX = (
+    "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08"
+    "8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD"
+    "3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E"
+    "7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899F"
+    "A5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF05"
+    "98DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C"
+    "62F356208552BB9ED529077096966D670C354E4ABC9804F1746"
+    "C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2"
+    "EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CE"
+    "A956AE515D2261898FA051015728E5A8AAAC42DAD33170D045"
+    "07A33A85521ABDF1CBA64ECFB850458DBEF0A8AEA71575D060"
+    "C7DB3970F85A6E1E4C7ABF5AE8CDB0933D71E8C94E04A256"
+    "19DCEE3D2261AD2EE6BF12FFA06D98A0864D87602733EC86A6"
+    "4521F2B18177B200CBBE117577A615D6C770988C0BAD946E2"
+    "08E24FA074E5AB3143DB5BFCE0FD108E4B82D120A93AD2CAFF"
+    "FFFFFFFFFFFFFFFF"
+)
+COGNITO_N = int(COGNITO_N_HEX, 16)
+COGNITO_G = 2
+
+
+STATUS_LABELS = {
+    "applicationStatus": "总申请状态",
+    "applicationInfoStatus": "首页申请状态",
+    "updatedDate": "详情更新时间",
+    "homeUpdatedDate": "首页更新时间",
+    "eligibility": "资格审查",
+    "medical": "体检结果",
+    "additionalDocuments": "补充文件",
+    "interviewOrAppointment": "面试/预约",
+    "biometricInformation": "指纹/生物信息",
+    "backgroundChecks": "背景调查",
+    "finalDecision": "最终决定",
+    "profileStatus": "档案状态",
+    "listOfApplicants": "申请人信息",
+    "messages": "申请消息",
+}
+
+STATUS_CODE_MAP = {
+    "A11": "我们正在处理你的申请。若有更新或需要更多信息，IRCC 会发送消息。",
+    "SUBMITTED": "已提交",
+    "IN_PROGRESS": "进行中",
+    "E1": "申请正在处理中。IRCC 会在开始审查资格时发送消息。",
+    "E2": "IRCC 正在审查你是否符合资格要求。",
+    "E3": "资格审查已通过，请查看最终决定。",
+    "E4": "资格审查未通过，请查看最终决定。",
+    "M1": "不需要体检；如有变化，IRCC 会发送消息。",
+    "M2": "IRCC 已要求体检，请查看消息。",
+    "M3": "IRCC 正在审查体检结果。",
+    "M4": "体检结果已通过。",
+    "M5": "体检结果未通过，请查看最终决定。",
+    "AD1": "不需要补充文件。",
+    "AD2": "IRCC 需要补充文件，并会发送更详细消息。",
+    "AD3": "补充文件已上传。",
+    "AD4": "补充文件已收到，正在审查。",
+    "IA1": "不需要面试；如有变化，IRCC 会发送消息。",
+    "IA2": "需要面试，请查看消息。",
+    "IA3": "面试已完成。",
+    "IA4": "面试已取消，请查看消息。",
+    "B1": "不需要提供指纹；如有变化，IRCC 会发送消息。",
+    "B2": "需要提供指纹，请查看消息。",
+    "B3": "指纹/生物信息已完成。",
+    "BC1": "申请正在处理中。IRCC 会在开始背景调查时发送消息。",
+    "BC2": "IRCC 正在处理背景调查；如需更多信息会发送消息。",
+    "BC3": "背景调查已完成。",
+    "FD1": "申请正在处理中。最终决定作出后，IRCC 会发送消息。",
+    "FD2": "申请已获批，请查看消息。",
+    "FD3": "申请已被拒，请查看消息。",
+    "FD4": "申请已撤回，请查看消息。",
+    "FD5": "申请已取消，IRCC 会发送更详细消息。",
+    "PS0": "档案处理中",
+}
+
+
+class IrccAuthenticationError(RuntimeError):
+    pass
+
+
+def computeNextIrccCheckAt(base: datetime | None = None) -> str:
+    base = base or datetime.now(UTC)
+    nextHour = (base + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    return (nextHour + timedelta(minutes=random.randint(0, 59))).isoformat()
+
+
+def canonicalJson(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def stableHash(value: Any) -> str:
+    return hashlib.sha256(canonicalJson(value).encode()).hexdigest()
+
+
+def maskEmail(email: str) -> str:
+    if "@" not in email:
+        return email[:2] + "***"
+    name, domain = email.split("@", 1)
+    prefix = name[:2] if len(name) >= 2 else name[:1]
+    return f"{prefix}***@{domain}"
+
+
+def formatIrccValue(value: Any) -> str:
+    if isinstance(value, dict) and "status" in value:
+        statusValue = str(value.get("status") or "")
+        label = STATUS_CODE_MAP.get(statusValue, f"未知状态码：{statusValue}" if statusValue else "空")
+        timeStamp = value.get("timeStamp")
+        return f"{label}（{statusValue}）" + (f"，时间：{timeStamp}" if timeStamp else "")
+    if isinstance(value, str):
+        return STATUS_CODE_MAP.get(value, value)
+    if value in (None, ""):
+        return "-"
+    return str(value)
+
+
+def normalizeMessage(message: dict[str, Any]) -> dict[str, Any]:
+    details = message.get("messageDetails") if isinstance(message.get("messageDetails"), dict) else {}
+    attachment = details.get("attachment") if isinstance(details.get("attachment"), dict) else {}
+    status = details.get("status") if isinstance(details.get("status"), dict) else {}
+    return {
+        "messageId": message.get("messageId"),
+        "createdDttm": message.get("createdDttm"),
+        "updatedDttm": message.get("updatedDttm"),
+        "messageTag": details.get("messageTag"),
+        "subject": details.get("subject"),
+        "attachmentFileName": attachment.get("attachmentFileName"),
+        "viewedDate": status.get("viewedDate"),
+    }
+
+
+def normalizeApplicationInfo(applicationList: list[Any], appId: str) -> dict[str, Any]:
+    selected = None
+    for item in applicationList:
+        if isinstance(item, dict) and str(item.get("id")) == str(appId):
+            selected = item
+            break
+    if selected is None and applicationList:
+        first = applicationList[0]
+        selected = first if isinstance(first, dict) else None
+    if not selected:
+        return {}
+    applicant = selected.get("applicant") if isinstance(selected.get("applicant"), dict) else {}
+    updatedDate = selected.get("updatedDate") if isinstance(selected.get("updatedDate"), dict) else {}
+    return {
+        "id": selected.get("id"),
+        "appStatus": selected.get("appStatus"),
+        "appRefIdNumber": selected.get("appRefIdNumber"),
+        "lineOfBusiness": selected.get("lineOfBusiness"),
+        "gcmsActionRequired": selected.get("gcmsActionRequired"),
+        "gcmsSubmittedDate": selected.get("gcmsSubmittedDate"),
+        "updatedDate": updatedDate,
+        "updatedTimestamp": updatedDate.get("timestamp"),
+        "applicant": {
+            "firstName": applicant.get("firstName"),
+            "lastName": applicant.get("lastName"),
+            "applicantType": applicant.get("applicantType"),
+        },
+    }
+
+
+def normalizeSnapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    appStatus = snapshot.get("appStatus") if isinstance(snapshot.get("appStatus"), dict) else {}
+    messages = snapshot.get("messages") if isinstance(snapshot.get("messages"), list) else []
+    applicationInfo = snapshot.get("applicationInfo") if isinstance(snapshot.get("applicationInfo"), dict) else {}
+    return {
+        "applicationStatus": appStatus.get("applicationStatus"),
+        "updatedDate": appStatus.get("UpdatedDate"),
+        "applicationInfoStatus": applicationInfo.get("appStatus"),
+        "homeUpdatedDate": applicationInfo.get("updatedTimestamp") or applicationInfo.get("updatedDate"),
+        "eligibility": appStatus.get("eligibility"),
+        "medical": appStatus.get("medical"),
+        "additionalDocuments": appStatus.get("additionalDocuments"),
+        "interviewOrAppointment": appStatus.get("interviewOrAppointment"),
+        "biometricInformation": appStatus.get("biometricInformation"),
+        "backgroundChecks": appStatus.get("backgroundChecks"),
+        "finalDecision": appStatus.get("finalDecision"),
+        "profileStatus": appStatus.get("profileStatus"),
+        "listOfApplicants": appStatus.get("listOfApplicants"),
+        "messages": [normalizeMessage(item) for item in messages if isinstance(item, dict)],
+    }
+
+
+def summarizeSnapshot(snapshot: dict[str, Any]) -> str:
+    normalized = normalizeSnapshot(snapshot)
+    lines = [
+        f"总申请状态：{formatIrccValue(normalized.get('applicationStatus'))}",
+        f"首页申请状态：{formatIrccValue(normalized.get('applicationInfoStatus'))}",
+        f"资格审查：{formatIrccValue(normalized.get('eligibility'))}",
+        f"体检结果：{formatIrccValue(normalized.get('medical'))}",
+        f"补充文件：{formatIrccValue(normalized.get('additionalDocuments'))}",
+        f"面试/预约：{formatIrccValue(normalized.get('interviewOrAppointment'))}",
+        f"指纹/生物信息：{formatIrccValue(normalized.get('biometricInformation'))}",
+        f"背景调查：{formatIrccValue(normalized.get('backgroundChecks'))}",
+        f"最终决定：{formatIrccValue(normalized.get('finalDecision'))}",
+        f"消息数量：{len(normalized.get('messages') or [])}",
+    ]
+    return "\n".join(lines)
+
+
+def buildChangeSummary(previous: dict[str, Any] | None, current: dict[str, Any]) -> str:
+    if not previous:
+        return "首次记录 IRCC Portal 快照。"
+    previousNormalized = normalizeSnapshot(previous)
+    currentNormalized = normalizeSnapshot(current)
+    changes: list[str] = []
+    for key, label in STATUS_LABELS.items():
+        previousValue = previousNormalized.get(key)
+        currentValue = currentNormalized.get(key)
+        if stableHash(previousValue) == stableHash(currentValue):
+            continue
+        if key == "homeUpdatedDate":
+            changes.append(f"Ghost update：首页更新时间从 {previousValue or '-'} 变为 {currentValue or '-'}。")
+        elif key == "messages":
+            previousMessages = previousValue or []
+            currentMessages = currentValue or []
+            changes.append(f"申请消息发生变化：{len(previousMessages)} 条 -> {len(currentMessages)} 条。")
+        else:
+            changes.append(f"{label} 发生变化：{formatIrccValue(previousValue)} -> {formatIrccValue(currentValue)}。")
+    return "\n".join(changes[:20]) if changes else "快照指纹变化，但未生成字段级摘要。"
+
+
+def hashSha256(value: bytes | str) -> bytes:
+    raw = value.encode() if isinstance(value, str) else value
+    return hashlib.sha256(raw).digest()
+
+
+def hexHash(value: bytes | str) -> int:
+    return int(hashSha256(value).hex(), 16)
+
+
+def padHex(value: int) -> str:
+    hexValue = f"{value:x}"
+    if len(hexValue) % 2 == 1:
+        hexValue = f"0{hexValue}"
+    if hexValue[0] in "89ABCDEFabcdef":
+        hexValue = f"00{hexValue}"
+    return hexValue
+
+
+def computeHkdf(ikm: bytes, salt: bytes) -> bytes:
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
+    infoBits = b"Caldera Derived Key" + b"\x01"
+    return hmac.new(prk, infoBits, hashlib.sha256).digest()[:16]
+
+
+def cognitoTimestamp() -> str:
+    now = datetime.utcnow()
+    return f"{now.strftime('%a %b')} {now.day} {now.strftime('%H:%M:%S UTC %Y')}"
+
+
+def cognitoRequest(payload: dict[str, Any], target: str = "AWSCognitoIdentityProviderService.InitiateAuth") -> dict[str, Any]:
+    headers = {
+        "Content-Type": "application/x-amz-json-1.1",
+        "X-Amz-Target": target,
+    }
+    with httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+        response = client.post(COGNITO_ENDPOINT, headers=headers, json=payload)
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise IrccAuthenticationError(f"IRCC 登录服务返回非 JSON：HTTP {response.status_code}") from exc
+    if response.status_code >= 400:
+        message = data.get("message") or data.get("__type") or f"HTTP {response.status_code}"
+        raise IrccAuthenticationError(f"IRCC 登录失败：{message}")
+    return data
+
+
+def loginWithSrp(portalEmail: str, portalPassword: str) -> dict[str, Any]:
+    smallA = stdlibSecrets.randbits(1024)
+    largeA = pow(COGNITO_G, smallA, COGNITO_N)
+    if largeA % COGNITO_N == 0:
+        raise IrccAuthenticationError("IRCC SRP 参数生成失败，请重试。")
+    auth = cognitoRequest(
+        {
+            "AuthFlow": "USER_SRP_AUTH",
+            "ClientId": COGNITO_CLIENT_ID,
+            "AuthParameters": {
+                "USERNAME": portalEmail,
+                "SRP_A": f"{largeA:x}",
+            },
+            "ClientMetadata": {},
+        },
+    )
+    if auth.get("ChallengeName") != "PASSWORD_VERIFIER":
+        return buildTokenCacheFromAuthResult(auth)
+    challenge = auth.get("ChallengeParameters") if isinstance(auth.get("ChallengeParameters"), dict) else {}
+    userIdForSrp = str(challenge.get("USER_ID_FOR_SRP") or portalEmail)
+    saltHex = str(challenge.get("SALT") or "")
+    srpBHex = str(challenge.get("SRP_B") or "")
+    secretBlock = str(challenge.get("SECRET_BLOCK") or "")
+    if not saltHex or not srpBHex or not secretBlock:
+        raise IrccAuthenticationError("IRCC SRP 登录缺少挑战参数。")
+    salt = int(saltHex, 16)
+    largeB = int(srpBHex, 16)
+    if largeB % COGNITO_N == 0:
+        raise IrccAuthenticationError("IRCC SRP 服务端参数无效。")
+    k = hexHash(bytes.fromhex("00" + COGNITO_N_HEX + "0" + f"{COGNITO_G:x}"))
+    uValue = hexHash(bytes.fromhex(padHex(largeA) + padHex(largeB)))
+    userPasswordHash = hashSha256(f"{COGNITO_POOL_NAME}{userIdForSrp}:{portalPassword}")
+    xValue = hexHash(bytes.fromhex(padHex(salt)) + userPasswordHash)
+    sValue = pow((largeB - k * pow(COGNITO_G, xValue, COGNITO_N)) % COGNITO_N, smallA + uValue * xValue, COGNITO_N)
+    hkdf = computeHkdf(bytes.fromhex(padHex(sValue)), bytes.fromhex(padHex(uValue)))
+    timestamp = cognitoTimestamp()
+    signatureMessage = COGNITO_POOL_NAME.encode() + userIdForSrp.encode() + b64decode(secretBlock) + timestamp.encode()
+    signature = b64encode(hmac.new(hkdf, signatureMessage, hashlib.sha256).digest()).decode()
+    response = cognitoRequest(
+        {
+            "ChallengeName": "PASSWORD_VERIFIER",
+            "ClientId": COGNITO_CLIENT_ID,
+            "ChallengeResponses": {
+                "USERNAME": userIdForSrp,
+                "PASSWORD_CLAIM_SECRET_BLOCK": secretBlock,
+                "TIMESTAMP": timestamp,
+                "PASSWORD_CLAIM_SIGNATURE": signature,
+            },
+            "ClientMetadata": {},
+        },
+        target="AWSCognitoIdentityProviderService.RespondToAuthChallenge",
+    )
+    return buildTokenCacheFromAuthResult(response)
+
+
+def buildTokenCacheFromAuthResult(result: dict[str, Any]) -> dict[str, Any]:
+    authResult = result.get("AuthenticationResult") if isinstance(result.get("AuthenticationResult"), dict) else {}
+    if not authResult:
+        challenge = str(result.get("ChallengeName") or "")
+        if challenge:
+            raise IrccAuthenticationError(f"IRCC 登录需要额外验证（{challenge}），Alpha 暂不支持自动处理 MFA。")
+        raise IrccAuthenticationError("IRCC 登录未返回 token")
+    expiresIn = int(authResult.get("ExpiresIn") or 3600)
+    expiresAt = (datetime.now(UTC) + timedelta(seconds=max(60, expiresIn - 60))).replace(microsecond=0).isoformat()
+    return {
+        "idToken": authResult.get("IdToken"),
+        "accessToken": authResult.get("AccessToken"),
+        "refreshToken": authResult.get("RefreshToken"),
+        "expiresAt": expiresAt,
+    }
+
+
+def loginWithPassword(portalEmail: str, portalPassword: str) -> dict[str, Any]:
+    return loginWithSrp(portalEmail, portalPassword)
+
+
+def refreshTokenCache(tokenCache: dict[str, Any]) -> dict[str, Any]:
+    refreshToken = tokenCache.get("refreshToken")
+    if not refreshToken:
+        raise IrccAuthenticationError("IRCC token 已失效，需要重新登录。")
+    result = cognitoRequest(
+        {
+            "AuthFlow": "REFRESH_TOKEN_AUTH",
+            "ClientId": COGNITO_CLIENT_ID,
+            "AuthParameters": {"REFRESH_TOKEN": refreshToken},
+            "ClientMetadata": {},
+        },
+    )
+    nextCache = buildTokenCacheFromAuthResult(result)
+    nextCache["refreshToken"] = refreshToken
+    return nextCache
+
+
+def tokenCacheExpired(tokenCache: dict[str, Any]) -> bool:
+    expiresAt = str(tokenCache.get("expiresAt") or "")
+    if not expiresAt:
+        return True
+    try:
+        parsed = datetime.fromisoformat(expiresAt)
+    except ValueError:
+        return True
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC) <= datetime.now(UTC)
+
+
+def getAuthorizedToken(account: dict[str, Any]) -> dict[str, Any]:
+    tokenJson = decryptIfNeeded(account.get("token_cache_encrypted") or "") or ""
+    tokenCache = json.loads(tokenJson) if tokenJson else {}
+    try:
+        if tokenCache and not tokenCacheExpired(tokenCache):
+            return tokenCache
+        if tokenCache.get("refreshToken"):
+            return refreshTokenCache(tokenCache)
+    except Exception:
+        pass
+    email = decryptIfNeeded(account["portal_email_encrypted"]) or ""
+    password = decryptIfNeeded(account["portal_password_encrypted"]) or ""
+    return loginWithPassword(email, password)
+
+
+def irccHeaders(tokenCache: dict[str, Any]) -> dict[str, str]:
+    token = tokenCache.get("idToken") or tokenCache.get("accessToken")
+    if not token:
+        raise IrccAuthenticationError("IRCC token 为空，需要重新登录。")
+    return {
+        "Accept": "application/json, text/plain, */*",
+        "Authorization": f"Bearer {token}",
+        "Origin": IRCC_PORTAL_URL,
+        "Referer": f"{IRCC_PORTAL_URL}/home?lang=en",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    }
+
+
+def apiGet(path: str, tokenCache: dict[str, Any]) -> Any:
+    with httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+        response = client.get(f"{IRCC_API_BASE_URL}{path}", headers=irccHeaders(tokenCache))
+    if response.status_code in {401, 403}:
+        raise IrccAuthenticationError(f"IRCC API 鉴权失败：HTTP {response.status_code}")
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"IRCC API 返回非 JSON：HTTP {response.status_code}") from exc
+
+
+def fetchSubmittedApplications(tokenCache: dict[str, Any]) -> list[dict[str, Any]]:
+    data = apiGet("/applicationInfo?appStatus=SUBMITTED&pageSize=50&pageIndex=0&sortBy=UPDATED_DATE&sortOrder=DESC", tokenCache)
+    applications = data.get("applicationList") if isinstance(data, dict) else []
+    return [item for item in applications if isinstance(item, dict)]
+
+
+def fetchIrccSnapshot(appId: str, tokenCache: dict[str, Any]) -> dict[str, Any]:
+    submitted = apiGet("/applicationInfo?appStatus=SUBMITTED&pageSize=50&pageIndex=0&sortBy=UPDATED_DATE&sortOrder=DESC", tokenCache)
+    applicationList = submitted.get("applicationList") if isinstance(submitted, dict) else []
+    appStatus = apiGet(f"/appStatus?appId={appId}", tokenCache)
+    messages = apiGet(f"/messages?messageRefType=Application&messageRefId={appId}&messageType=Online", tokenCache)
+    return {
+        "applicationInfo": normalizeApplicationInfo(applicationList if isinstance(applicationList, list) else [], appId),
+        "appStatus": appStatus if isinstance(appStatus, dict) else {},
+        "messages": messages if isinstance(messages, list) else [],
+    }
+
+
+def normalizeDiscoveredApplication(item: dict[str, Any]) -> dict[str, Any]:
+    applicant = item.get("applicant") if isinstance(item.get("applicant"), dict) else {}
+    firstName = str(applicant.get("firstName") or "").strip()
+    lastName = str(applicant.get("lastName") or "").strip()
+    return {
+        "appId": str(item.get("id") or ""),
+        "applicationNumber": str(item.get("appRefIdNumber") or ""),
+        "principalApplicant": " ".join(part for part in [firstName, lastName] if part),
+        "status": str(item.get("appStatus") or ""),
+        "submittedAt": str(item.get("gcmsSubmittedDate") or ""),
+        "raw": item,
+    }
+
+
+def upsertIrccAccount(userId: int, portalEmail: str, portalPassword: str, tokenCache: dict[str, Any] | None = None) -> int:
+    now = utcNowIso()
+    normalizedEmail = portalEmail.strip().lower()
+    with getConnection() as connection:
+        accountRows = connection.execute("SELECT * FROM ircc_portal_accounts WHERE user_id = ?", (userId,)).fetchall()
+        existing = None
+        for row in accountRows:
+            if (decryptIfNeeded(row["portal_email_encrypted"]) or "").lower() == normalizedEmail:
+                existing = row
+                break
+        if existing:
+            connection.execute(
+                """
+                UPDATE ircc_portal_accounts
+                SET portal_password_encrypted = ?,
+                    token_cache_encrypted = ?,
+                    auth_status = 'ok',
+                    last_auth_error = '',
+                    last_authenticated_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    encryptSecret(portalPassword),
+                    encryptSecret(json.dumps(tokenCache or {}, ensure_ascii=False)),
+                    now if tokenCache else existing.get("last_authenticated_at"),
+                    now,
+                    existing["id"],
+                ),
+            )
+            return int(existing["id"])
+        cursor = connection.execute(
+            """
+            INSERT INTO ircc_portal_accounts (
+                user_id, portal_email_encrypted, portal_password_encrypted, token_cache_encrypted,
+                auth_status, last_auth_error, last_authenticated_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 'ok', '', ?, ?, ?)
+            """,
+            (
+                userId,
+                encryptSecret(normalizedEmail),
+                encryptSecret(portalPassword),
+                encryptSecret(json.dumps(tokenCache or {}, ensure_ascii=False)),
+                now if tokenCache else None,
+                now,
+                now,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def updateAccountAuthState(accountId: int, tokenCache: dict[str, Any] | None = None, errorMessage: str = "") -> None:
+    now = utcNowIso()
+    with getConnection() as connection:
+        if errorMessage:
+            connection.execute(
+                """
+                UPDATE ircc_portal_accounts
+                SET auth_status = 'error', last_auth_error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (errorMessage[:500], now, accountId),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE ircc_portal_accounts
+                SET auth_status = 'ok', last_auth_error = '', token_cache_encrypted = ?,
+                    last_authenticated_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (encryptSecret(json.dumps(tokenCache or {}, ensure_ascii=False)), now, now, accountId),
+            )
+
+
+def discoverIrccApplications(userId: int, payload: IrccDiscoverRequest) -> dict[str, Any]:
+    tokenCache = loginWithPassword(str(payload.portalEmail).lower(), payload.portalPassword)
+    accountId = upsertIrccAccount(userId, str(payload.portalEmail), payload.portalPassword, tokenCache)
+    applications = [normalizeDiscoveredApplication(item) for item in fetchSubmittedApplications(tokenCache)]
+    updateAccountAuthState(accountId, tokenCache)
+    return {"accountId": accountId, "applications": applications}
+
+
+def normalizeIrccCaseRow(row: dict[str, Any]) -> dict[str, Any]:
+    email = decryptIfNeeded(row.get("portal_email_encrypted")) or ""
+    rawPayload = decryptIfNeeded(row.get("latest_raw_payload") or "") or ""
+    latestSnapshot = json.loads(rawPayload) if rawPayload else None
+    return {
+        "id": row["id"],
+        "userId": row["user_id"],
+        "displayName": row["display_name"],
+        "portalEmailMasked": maskEmail(email),
+        "appId": row["app_id"],
+        "applicationNumber": row["application_number"],
+        "principalApplicant": row["principal_applicant"],
+        "receiveEmail": decryptIfNeeded(row["receive_email"]) or "",
+        "senderMode": row["sender_mode"],
+        "isEnabled": bool(row["is_enabled"]),
+        "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
+        "nextCheckAt": row["next_check_at"],
+        "lastCheckedAt": row["last_checked_at"],
+        "lastTriggerType": row.get("last_trigger_type"),
+        "lastSnapshotHash": row.get("last_snapshot_hash") or "",
+        "lastSummary": row.get("last_summary") or "",
+        "lastErrorMessage": row.get("last_error_message") or "",
+        "latestSnapshot": latestSnapshot,
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def listIrccCases(userId: int | None = None) -> list[dict[str, Any]]:
+    params: tuple[Any, ...] = ()
+    where = ""
+    if userId is not None:
+        where = "WHERE c.user_id = ?"
+        params = (userId,)
+    with getConnection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT c.*, a.portal_email_encrypted,
+                   (
+                       SELECT h.raw_payload
+                       FROM ircc_status_history h
+                       WHERE h.case_id = c.id
+                       ORDER BY h.id DESC
+                       LIMIT 1
+                   ) AS latest_raw_payload
+            FROM ircc_cases c
+            JOIN ircc_portal_accounts a ON a.id = c.account_id
+            {where}
+            ORDER BY c.updated_at DESC
+            """,
+            params,
+        ).fetchall()
+    return [normalizeIrccCaseRow(row) for row in rows]
+
+
+def getIrccCase(caseId: int, userId: int | None = None) -> dict[str, Any] | None:
+    params: tuple[Any, ...] = (caseId,)
+    extraWhere = ""
+    if userId is not None:
+        extraWhere = "AND c.user_id = ?"
+        params = (caseId, userId)
+    with getConnection() as connection:
+        row = connection.execute(
+            f"""
+            SELECT c.*, a.portal_email_encrypted,
+                   (
+                       SELECT h.raw_payload
+                       FROM ircc_status_history h
+                       WHERE h.case_id = c.id
+                       ORDER BY h.id DESC
+                       LIMIT 1
+                   ) AS latest_raw_payload
+            FROM ircc_cases c
+            JOIN ircc_portal_accounts a ON a.id = c.account_id
+            WHERE c.id = ? {extraWhere}
+            """,
+            params,
+        ).fetchone()
+    return normalizeIrccCaseRow(row) if row else None
+
+
+def countUserProfiles(connection: Any, userId: int) -> int:
+    ceacRow = connection.execute("SELECT COUNT(*) AS case_count FROM ceac_cases WHERE user_id = ?", (userId,)).fetchone()
+    irccRow = connection.execute("SELECT COUNT(*) AS case_count FROM ircc_cases WHERE user_id = ?", (userId,)).fetchone()
+    return int(ceacRow["case_count"] if ceacRow else 0) + int(irccRow["case_count"] if irccRow else 0)
+
+
+def createIrccCase(userId: int, payload: IrccCaseInput) -> dict[str, Any]:
+    now = utcNowIso()
+    if payload.emailNotificationsEnabled and not payload.receiveEmail:
+        raise ValueError("开启邮件推送时必须填写接收提醒邮箱。")
+    tokenCache = loginWithPassword(str(payload.portalEmail).lower(), payload.portalPassword)
+    accountId = upsertIrccAccount(userId, str(payload.portalEmail), payload.portalPassword, tokenCache)
+    with getConnection() as connection:
+        user = connection.execute("SELECT role, account_tier FROM users WHERE id = ?", (userId,)).fetchone()
+        if not user:
+            raise ValueError("用户不存在")
+        if user.get("role") != "admin":
+            profileLimit = PREMIUM_CASE_LIMIT if user.get("account_tier") == "premium" else STANDARD_CASE_LIMIT
+            if countUserProfiles(connection, userId) >= profileLimit:
+                raise ValueError(f"当前账号最多可添加 {profileLimit} 个档案，请联系管理员升级账号。")
+        duplicate = connection.execute("SELECT id FROM ircc_cases WHERE user_id = ? AND app_id = ?", (userId, payload.appId)).fetchone()
+        if duplicate:
+            raise ValueError("该 IRCC 申请已经存在。")
+        upsertSmtpConfig(connection, userId, payload.smtpConfig)
+        cursor = connection.execute(
+            """
+            INSERT INTO ircc_cases (
+                user_id, account_id, display_name, app_id, application_number, principal_applicant,
+                receive_email, sender_mode, is_enabled, email_notifications_enabled,
+                next_check_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                userId,
+                accountId,
+                payload.displayName,
+                payload.appId,
+                payload.applicationNumber or "",
+                payload.principalApplicant or "",
+                encryptSecret(str(payload.receiveEmail or "")),
+                payload.senderMode,
+                int(payload.isEnabled),
+                int(payload.emailNotificationsEnabled),
+                computeNextIrccCheckAt() if payload.isEnabled else None,
+                now,
+                now,
+            ),
+        )
+    updateAccountAuthState(accountId, tokenCache)
+    case = getIrccCase(int(cursor.lastrowid), userId)
+    if case is None:
+        raise RuntimeError("创建 IRCC 档案失败")
+    return case
+
+
+def patchIrccCase(caseId: int, userId: int, payload: IrccCasePatch) -> dict[str, Any] | None:
+    current = getIrccCase(caseId, userId)
+    if not current:
+        return None
+    data = payload.model_dump(exclude_unset=True)
+    nextEmailNotificationsEnabled = data.get("emailNotificationsEnabled", current.get("emailNotificationsEnabled"))
+    nextReceiveEmail = data.get("receiveEmail", current.get("receiveEmail"))
+    if nextEmailNotificationsEnabled and not nextReceiveEmail:
+        raise ValueError("开启邮件推送时必须填写接收提醒邮箱。")
+    now = utcNowIso()
+    with getConnection() as connection:
+        row = connection.execute("SELECT * FROM ircc_cases WHERE id = ? AND user_id = ?", (caseId, userId)).fetchone()
+        if not row:
+            return None
+        accountId = int(row["account_id"])
+        if payload.smtpConfig:
+            upsertSmtpConfig(connection, userId, payload.smtpConfig)
+        if data.get("portalEmail") and data.get("portalPassword"):
+            tokenCache = loginWithPassword(str(data["portalEmail"]).lower(), str(data["portalPassword"]))
+            accountId = upsertIrccAccount(userId, str(data["portalEmail"]), str(data["portalPassword"]), tokenCache)
+        assignments: list[str] = []
+        values: list[Any] = []
+        columnMap = {
+            "displayName": "display_name",
+            "appId": "app_id",
+            "applicationNumber": "application_number",
+            "principalApplicant": "principal_applicant",
+            "receiveEmail": "receive_email",
+            "senderMode": "sender_mode",
+            "isEnabled": "is_enabled",
+            "emailNotificationsEnabled": "email_notifications_enabled",
+        }
+        if accountId != int(row["account_id"]):
+            assignments.append("account_id = ?")
+            values.append(accountId)
+        for key, column in columnMap.items():
+            if key not in data:
+                continue
+            value = data[key]
+            if key == "receiveEmail" and value is not None:
+                value = encryptSecret(str(value))
+            if key == "isEnabled":
+                value = int(value)
+                assignments.append("next_check_at = ?")
+                values.append(computeNextIrccCheckAt() if value else None)
+            if key == "emailNotificationsEnabled":
+                value = int(value)
+            assignments.append(f"{column} = ?")
+            values.append(value)
+        if not assignments:
+            return getIrccCase(caseId, userId)
+        assignments.append("updated_at = ?")
+        values.extend([now, caseId, userId])
+        connection.execute(f"UPDATE ircc_cases SET {', '.join(assignments)} WHERE id = ? AND user_id = ?", tuple(values))
+    return getIrccCase(caseId, userId)
+
+
+def deleteIrccCase(caseId: int, userId: int) -> bool:
+    with getConnection() as connection:
+        cursor = connection.execute("DELETE FROM ircc_cases WHERE id = ? AND user_id = ?", (caseId, userId))
+        return cursor.rowcount > 0
+
+
+def sendIrccNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, subject: str, body: str, connection: Any | None = None) -> None:
+    config = None
+    if case["sender_mode"] == "custom" and smtpConfig:
+        config = {
+            "fromEmail": smtpConfig["from_email"],
+            "password": decryptSecret(smtpConfig["password_encrypted"]),
+            "host": smtpConfig["host"],
+            "port": int(smtpConfig["port"]),
+            "useSsl": bool(smtpConfig["use_ssl"]),
+        }
+    else:
+        systemConfig = getSystemSmtpConfig()
+        config = {
+            "fromEmail": systemConfig["fromEmail"],
+            "password": systemConfig["password"],
+            "host": systemConfig["host"],
+            "port": int(systemConfig["port"]),
+            "useSsl": bool(systemConfig["useSsl"]),
+        }
+    if not config["fromEmail"] or not config["password"]:
+        print(f"[mail] IRCC email is not configured. Subject: {subject}, To: {case['receive_email']}")
+        return
+    sendEmail(
+        fromEmail=config["fromEmail"],
+        toEmail=case["receive_email"],
+        password=config["password"],
+        host=config["host"],
+        port=config["port"],
+        useSsl=config["useSsl"],
+        subject=subject,
+        body=body,
+        htmlBody=buildEmailHtml(body),
+    )
+    recordEmailDelivery(
+        userId=int(case["user_id"]),
+        caseId=None,
+        emailType="ircc_status",
+        recipient=case["receive_email"],
+        subject=subject,
+        connection=connection,
+    )
+
+
+def runIrccCaseQuery(caseId: int, triggerType: str = "ircc_automatic") -> dict[str, Any]:
+    started = datetime.now(UTC)
+    startedIso = started.replace(microsecond=0).isoformat()
+    success = False
+    changed = False
+    notificationSent = False
+    errorMessage = ""
+    snapshot: dict[str, Any] = {}
+    changeSummary = ""
+    with getConnection() as connection:
+        row = connection.execute(
+            """
+            SELECT c.*, a.portal_email_encrypted, a.portal_password_encrypted, a.token_cache_encrypted
+            FROM ircc_cases c
+            JOIN ircc_portal_accounts a ON a.id = c.account_id
+            WHERE c.id = ?
+            """,
+            (caseId,),
+        ).fetchone()
+        smtpConfig = connection.execute("SELECT * FROM smtp_configs WHERE user_id = ?", (row["user_id"],)).fetchone() if row else None
+        previous = connection.execute(
+            """
+            SELECT raw_payload
+            FROM ircc_status_history
+            WHERE case_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (caseId,),
+        ).fetchone()
+    if not row:
+        raise RuntimeError("IRCC 档案不存在")
+    case = dict(row)
+    case["receive_email"] = decryptIfNeeded(case["receive_email"]) or ""
+    try:
+        tokenCache = getAuthorizedToken(row)
+        updateAccountAuthState(int(row["account_id"]), tokenCache)
+        snapshot = fetchIrccSnapshot(str(row["app_id"]), tokenCache)
+        snapshotHash = stableHash(normalizeSnapshot(snapshot))
+        previousSnapshot = json.loads(decryptIfNeeded(previous["raw_payload"]) or "{}") if previous else None
+        changed = previous is None or str(row.get("last_snapshot_hash") or "") != snapshotHash
+        changeSummary = buildChangeSummary(previousSnapshot, snapshot)
+        success = True
+    except IrccAuthenticationError as exc:
+        errorMessage = str(exc)
+        updateAccountAuthState(int(row["account_id"]), errorMessage=errorMessage)
+    except Exception as exc:
+        errorMessage = str(exc)
+
+    finished = datetime.now(UTC)
+    finishedIso = finished.replace(microsecond=0).isoformat()
+    durationMs = int((finished - started).total_seconds() * 1000)
+    with getConnection() as connection:
+        if success:
+            snapshotHash = stableHash(normalizeSnapshot(snapshot))
+            normalized = normalizeSnapshot(snapshot)
+            messageCount = len(normalized.get("messages") or [])
+            if changed:
+                shouldNotify = previous is not None and bool(row["email_notifications_enabled"])
+                if shouldNotify:
+                    try:
+                        subject = f"[IRCC Alpha] {row['application_number'] or row['app_id']} 申请状态发生变化"
+                        body = "\n".join(
+                            [
+                                "IRCC Portal Alpha 监控检测到申请信息变化。",
+                                "提示：该功能仍处于 Alpha，结果依赖 IRCC Portal，可能因为官网变化而延迟或失败。",
+                                "",
+                                f"档案：{row['display_name']}",
+                                f"Application number：{row['application_number'] or '-'}",
+                                f"appId：{row['app_id']}",
+                                f"申请人：{row['principal_applicant'] or '-'}",
+                                f"查询时间：{finishedIso}",
+                                "",
+                                "变化摘要：",
+                                changeSummary,
+                                "",
+                                "当前状态摘要：",
+                                summarizeSnapshot(snapshot),
+                            ],
+                        )
+                        sendIrccNotification(case, smtpConfig, subject, body, connection)
+                        notificationSent = True
+                    except Exception as exc:
+                        errorMessage = f"Notification failed: {exc}"
+                connection.execute(
+                    """
+                    INSERT INTO ircc_status_history (
+                        case_id, snapshot_hash, application_status, application_info_status,
+                        message_count, change_summary, fetched_at, raw_payload, notification_sent
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        caseId,
+                        snapshotHash,
+                        str(normalized.get("applicationStatus") or ""),
+                        str(normalized.get("applicationInfoStatus") or ""),
+                        messageCount,
+                        changeSummary,
+                        finishedIso,
+                        encryptSecret(json.dumps(snapshot, ensure_ascii=False, default=str)),
+                        int(notificationSent),
+                    ),
+                )
+            connection.execute(
+                """
+                UPDATE ircc_cases
+                SET last_checked_at = ?,
+                    next_check_at = ?,
+                    last_trigger_type = ?,
+                    last_snapshot_hash = ?,
+                    last_summary = ?,
+                    last_error_message = '',
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    finishedIso,
+                    computeNextIrccCheckAt(finished) if bool(row["is_enabled"]) else None,
+                    triggerType,
+                    snapshotHash,
+                    summarizeSnapshot(snapshot),
+                    finishedIso,
+                    caseId,
+                ),
+            )
+        else:
+            stopAuto = "登录" in errorMessage or "MFA" in errorMessage or "鉴权" in errorMessage or "token" in errorMessage.lower()
+            connection.execute(
+                """
+                UPDATE ircc_cases
+                SET last_checked_at = ?,
+                    next_check_at = ?,
+                    last_trigger_type = ?,
+                    is_enabled = CASE WHEN ? THEN 0 ELSE is_enabled END,
+                    last_error_message = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    finishedIso,
+                    None if stopAuto else computeNextIrccCheckAt(finished),
+                    triggerType,
+                    int(stopAuto),
+                    errorMessage,
+                    finishedIso,
+                    caseId,
+                ),
+            )
+        connection.execute(
+            """
+            INSERT INTO ircc_query_runs (case_id, started_at, finished_at, success, error_message, duration_ms, trigger_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (caseId, startedIso, finishedIso, int(success), errorMessage, durationMs, triggerType),
+        )
+    return {"success": success, "changed": success and changed, "notified": notificationSent, "error": errorMessage, "result": snapshot, "summary": changeSummary}
+
+
+def listIrccHistory(caseId: int, userId: int | None = None) -> list[dict[str, Any]]:
+    params: tuple[Any, ...] = (caseId,)
+    userFilter = ""
+    if userId is not None:
+        userFilter = "AND c.user_id = ?"
+        params = (caseId, userId)
+    with getConnection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT h.*
+            FROM ircc_status_history h
+            JOIN ircc_cases c ON c.id = h.case_id
+            WHERE h.case_id = ? {userFilter}
+            ORDER BY h.id DESC
+            """,
+            params,
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "caseId": row["case_id"],
+            "snapshotHash": row["snapshot_hash"],
+            "applicationStatus": row["application_status"],
+            "applicationInfoStatus": row["application_info_status"],
+            "messageCount": row["message_count"],
+            "changeSummary": row["change_summary"],
+            "fetchedAt": row["fetched_at"],
+            "rawPayload": json.loads(decryptIfNeeded(row["raw_payload"]) or "{}"),
+            "notificationSent": bool(row["notification_sent"]),
+        }
+        for row in rows
+    ]
+
+
+def normalizeIrccQueryJob(row: dict[str, Any]) -> dict[str, Any]:
+    resultJson = decryptIfNeeded(row.get("result_json") or "") or ""
+    return {
+        "id": row["id"],
+        "caseId": row["case_id"],
+        "triggerType": row["trigger_type"],
+        "status": row["status"],
+        "attempts": row["attempts"],
+        "errorMessage": row["error_message"],
+        "result": json.loads(resultJson) if resultJson else None,
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+        "startedAt": row["started_at"],
+        "finishedAt": row["finished_at"],
+    }
+
+
+def enqueueIrccCaseQuery(caseId: int, triggerType: str, userId: int | None = None) -> dict[str, Any] | None:
+    now = utcNowIso()
+    params: tuple[Any, ...] = (caseId,)
+    userFilter = ""
+    if userId is not None:
+        userFilter = "AND user_id = ?"
+        params = (caseId, userId)
+    with getConnection() as connection:
+        case = connection.execute(f"SELECT id FROM ircc_cases WHERE id = ? {userFilter}", params).fetchone()
+        if not case:
+            return None
+        existing = connection.execute(
+            """
+            SELECT *
+            FROM ircc_query_jobs
+            WHERE case_id = ? AND status IN ('queued', 'running')
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (caseId,),
+        ).fetchone()
+        if existing:
+            return normalizeIrccQueryJob(existing)
+        cursor = connection.execute(
+            """
+            INSERT INTO ircc_query_jobs (case_id, trigger_type, status, created_at, updated_at)
+            VALUES (?, ?, 'queued', ?, ?)
+            """,
+            (caseId, triggerType, now, now),
+        )
+        row = connection.execute("SELECT * FROM ircc_query_jobs WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return normalizeIrccQueryJob(row)
+
+
+def enqueueDueIrccCases(limit: int = 20) -> list[dict[str, Any]]:
+    nowIso = datetime.now(UTC).replace(microsecond=0).isoformat()
+    queued: list[dict[str, Any]] = []
+    with getConnection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id
+            FROM ircc_cases c
+            WHERE c.is_enabled = 1
+              AND c.next_check_at IS NOT NULL
+              AND c.next_check_at <= ?
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM ircc_query_jobs j
+                  WHERE j.case_id = c.id AND j.status IN ('queued', 'running')
+              )
+            ORDER BY c.next_check_at ASC
+            LIMIT ?
+            """,
+            (nowIso, limit),
+        ).fetchall()
+    for row in rows:
+        job = enqueueIrccCaseQuery(int(row["id"]), "ircc_automatic")
+        if job:
+            queued.append(job)
+    return queued
+
+
+def claimNextIrccQueryJob(workerId: str | None = None) -> dict[str, Any] | None:
+    workerId = workerId or f"ircc-worker-{uuid.uuid4()}"
+    nowIso = utcNowIso()
+    with getConnection() as connection:
+        row = connection.execute(
+            """
+            SELECT j.*
+            FROM ircc_query_jobs j
+            JOIN ircc_cases c ON c.id = j.case_id
+            JOIN users u ON u.id = c.user_id
+            WHERE j.status = 'queued'
+            ORDER BY u.worker_priority ASC, j.id ASC
+            LIMIT 1
+            """,
+        ).fetchone()
+        if not row:
+            return None
+        connection.execute(
+            """
+            UPDATE ircc_query_jobs
+            SET status = 'running', attempts = attempts + 1, locked_at = ?, locked_by = ?,
+                started_at = ?, updated_at = ?
+            WHERE id = ? AND status = 'queued'
+            """,
+            (nowIso, workerId, nowIso, nowIso, row["id"]),
+        )
+        claimed = connection.execute("SELECT * FROM ircc_query_jobs WHERE id = ?", (row["id"],)).fetchone()
+    return normalizeIrccQueryJob(claimed)
+
+
+def failTimedOutIrccQueryJobs(now: datetime | None = None, timeoutSeconds: int = 360) -> int:
+    now = now or datetime.now(UTC)
+    timeoutAt = (now - timedelta(seconds=timeoutSeconds)).replace(microsecond=0).isoformat()
+    nowIso = now.replace(microsecond=0).isoformat()
+    result = {"success": False, "changed": False, "error": IRCC_QUERY_TIMEOUT_ERROR_MESSAGE, "timeout": True}
+    with getConnection() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE ircc_query_jobs
+            SET status = 'failed',
+                error_message = ?,
+                result_json = ?,
+                finished_at = ?,
+                updated_at = ?
+            WHERE status = 'running'
+              AND started_at IS NOT NULL
+              AND started_at <= ?
+            """,
+            (
+                IRCC_QUERY_TIMEOUT_ERROR_MESSAGE,
+                encryptSecret(json.dumps(result, ensure_ascii=False)),
+                nowIso,
+                nowIso,
+                timeoutAt,
+            ),
+        )
+    return int(cursor.rowcount)
+
+
+def runIrccQueryJob(job: dict[str, Any]) -> dict[str, Any]:
+    try:
+        result = runIrccCaseQuery(int(job["caseId"]), triggerType=str(job["triggerType"]))
+        status = "succeeded" if result.get("success") else "failed"
+        errorMessage = str(result.get("error") or "")
+    except Exception as exc:
+        result = {"success": False, "changed": False, "error": str(exc)}
+        status = "failed"
+        errorMessage = str(exc)
+    finishedIso = utcNowIso()
+    with getConnection() as connection:
+        connection.execute(
+            """
+            UPDATE ircc_query_jobs
+            SET status = ?, error_message = ?, result_json = ?, finished_at = ?, updated_at = ?
+            WHERE id = ? AND status = 'running'
+            """,
+            (
+                status,
+                errorMessage,
+                encryptSecret(json.dumps(result, ensure_ascii=False, default=str)),
+                finishedIso,
+                finishedIso,
+                job["id"],
+            ),
+        )
+        row = connection.execute("SELECT * FROM ircc_query_jobs WHERE id = ?", (job["id"],)).fetchone()
+    return normalizeIrccQueryJob(row)
+
+
+def getIrccQueryJob(jobId: int, userId: int | None = None) -> dict[str, Any] | None:
+    params: tuple[Any, ...] = (jobId,)
+    userFilter = ""
+    if userId is not None:
+        userFilter = "AND c.user_id = ?"
+        params = (jobId, userId)
+    with getConnection() as connection:
+        row = connection.execute(
+            f"""
+            SELECT j.*
+            FROM ircc_query_jobs j
+            JOIN ircc_cases c ON c.id = j.case_id
+            WHERE j.id = ? {userFilter}
+            """,
+            params,
+        ).fetchone()
+    return normalizeIrccQueryJob(row) if row else None
+
+
+def sendCurrentIrccEmail(caseId: int, userId: int | None = None) -> dict[str, Any]:
+    params: tuple[Any, ...] = (caseId,)
+    userFilter = ""
+    if userId is not None:
+        userFilter = "AND c.user_id = ?"
+        params = (caseId, userId)
+    with getConnection() as connection:
+        row = connection.execute(f"SELECT c.* FROM ircc_cases c WHERE c.id = ? {userFilter}", params).fetchone()
+        if not row:
+            return {"success": False, "error": "IRCC 档案不存在"}
+        latest = connection.execute(
+            "SELECT * FROM ircc_status_history WHERE case_id = ? ORDER BY id DESC LIMIT 1",
+            (caseId,),
+        ).fetchone()
+        smtpConfig = connection.execute("SELECT * FROM smtp_configs WHERE user_id = ?", (row["user_id"],)).fetchone()
+    if not latest:
+        return {"success": False, "error": "暂无 IRCC 状态快照，请先立即查询一次"}
+    case = dict(row)
+    case["receive_email"] = decryptIfNeeded(case["receive_email"]) or ""
+    snapshot = json.loads(decryptIfNeeded(latest["raw_payload"]) or "{}")
+    body = "\n".join(
+        [
+            "这是一封 IRCC Portal Alpha 测试邮件。",
+            "",
+            f"档案：{case['display_name']}",
+            f"Application number：{case['application_number'] or '-'}",
+            f"appId：{case['app_id']}",
+            f"申请人：{case['principal_applicant'] or '-'}",
+            f"快照时间：{latest['fetched_at']}",
+            "",
+            "最近变化摘要：",
+            latest["change_summary"],
+            "",
+            "当前状态摘要：",
+            summarizeSnapshot(snapshot),
+        ],
+    )
+    try:
+        sendIrccNotification(case, smtpConfig, f"[IRCC Alpha] {case['display_name']} 测试邮件", body)
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    return {"success": True, "error": ""}
+
+
+def isIrccTrigger(triggerType: str | None) -> bool:
+    return str(triggerType or "").startswith(IRCC_QUERY_TRIGGER_PREFIX)

@@ -5,10 +5,10 @@
 ## 安全模型
 
 - 本站登录密码使用 Argon2id 单向哈希。旧 PBKDF2-SHA256 哈希仅用于兼容迁移，用户登录成功后应自动升级为 Argon2id。
-- CEAC 档案敏感字段、GTS UID/HAL、用户自定义 SMTP 授权码、系统 SMTP 授权码和原始查询快照使用 AES-256-GCM 可逆加密。
+- CEAC 档案敏感字段、GTS UID/HAL、IRCC Portal 邮箱/密码/token cache、用户自定义 SMTP 授权码、系统 SMTP 授权码和原始查询快照使用 AES-256-GCM 可逆加密。
 - 可逆加密主密钥保存在仓库外本地密钥文件中，通过 `CREDENTIAL_KEY_FILE` 指定。
 - Web 进程不直接执行 CEAC 爬虫；Web 只创建 SQLite 队列任务，独立 Worker 消费任务。
-- CEAC 请求目标固定为 `https://ceac.state.gov`，GTS 护照预约 slot 查询目标固定为 `https://scheduling-api.gtspremium.com`，用户输入不能影响请求 Host、协议或根 URL。
+- CEAC 请求目标固定为 `https://ceac.state.gov`，GTS 护照预约 slot 查询目标固定为 `https://scheduling-api.gtspremium.com`，IRCC Portal Alpha 查询目标固定为 `https://portal-portail.apps.cic.gc.ca` 和 `https://api.portal-portail.apps.cic.gc.ca`，用户输入不能影响请求 Host、协议或根 URL。
 - 敏感 API 请求校验 `Origin` / `Referer`，生产只信任 `https://ceac.mikezhuang.cn`。
 - 生产 Cookie 必须启用 `HttpOnly + SameSite=Lax + Secure`。
 - 应用层会下发匿名设备 Cookie，并使用 SQLite 持久化 IP/设备/账号/邮箱限流、登录失败冷却、验证码请求限流和安全事件审计。
@@ -27,6 +27,7 @@
 - 如果 SQLite 备份泄露，但主密钥没有泄露，敏感字段仍不可直接读取。
 - 如果普通应用配置泄露，但主密钥文件不在其中，敏感字段仍不可直接解密。
 - 如果服务器 root 权限被完全攻破，本地密钥文件也可能被读取；这不是 KMS，无法提供云 KMS 级别的硬隔离。
+- IRCC Portal Alpha 需要保存用户授权提交的 IRCC Portal 登录凭证以支持自动查询，风险高于 CEAC/GTS 的单次参数查询；只应在可信部署上使用。测试完成后，建议用户更改 IRCC Portal 密码。
 
 ## 主密钥文件
 

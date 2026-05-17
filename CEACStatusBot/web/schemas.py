@@ -184,6 +184,97 @@ class CeacCasePatch(CeacCaseInput):
     smtpConfig: SmtpConfigInput | None = None
 
 
+class IrccApplicationSelection(SecureModel):
+    appId: str = Field(min_length=1, max_length=32)
+    applicationNumber: str | None = Field(default=None, max_length=64)
+    principalApplicant: str | None = Field(default=None, max_length=120)
+
+    @field_validator("appId")
+    @classmethod
+    def validateAppId(cls, value: str) -> str:
+        normalized = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", normalized):
+            raise ValueError("IRCC appId 格式不支持")
+        return normalized
+
+    @field_validator("applicationNumber", "principalApplicant")
+    @classmethod
+    def validateOptionalText(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return rejectUnsafeText(value, "IRCC 申请信息")
+
+
+class IrccDiscoverRequest(SecureModel):
+    portalEmail: EmailStr
+    portalPassword: str = Field(min_length=1)
+
+
+class IrccCaseInput(SecureModel):
+    displayName: str = Field(min_length=1, max_length=80)
+    portalEmail: EmailStr
+    portalPassword: str = Field(min_length=1)
+    appId: str = Field(min_length=1, max_length=32)
+    applicationNumber: str | None = Field(default=None, max_length=64)
+    principalApplicant: str | None = Field(default=None, max_length=120)
+    receiveEmail: EmailStr | None = None
+    senderMode: str = Field(pattern="^(system|custom)$")
+    isEnabled: bool = True
+    emailNotificationsEnabled: bool = True
+    smtpConfig: SmtpConfigInput | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validateDisplayName(cls, value: str) -> str:
+        return rejectUnsafeText(value, "档案名称")
+
+    @field_validator("appId")
+    @classmethod
+    def validateAppId(cls, value: str) -> str:
+        return IrccApplicationSelection.validateAppId(value)
+
+    @field_validator("applicationNumber", "principalApplicant")
+    @classmethod
+    def validateOptionalText(cls, value: str | None) -> str | None:
+        return IrccApplicationSelection.validateOptionalText(value)
+
+    @field_validator("receiveEmail", mode="before")
+    @classmethod
+    def normalizeReceiveEmail(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+
+class IrccCasePatch(SecureModel):
+    displayName: str | None = Field(default=None, min_length=1, max_length=80)
+    portalEmail: EmailStr | None = None
+    portalPassword: str | None = Field(default=None, min_length=1)
+    appId: str | None = Field(default=None, min_length=1, max_length=32)
+    applicationNumber: str | None = Field(default=None, max_length=64)
+    principalApplicant: str | None = Field(default=None, max_length=120)
+    receiveEmail: EmailStr | None = None
+    senderMode: str | None = Field(default=None, pattern="^(system|custom)$")
+    isEnabled: bool | None = None
+    emailNotificationsEnabled: bool | None = None
+    smtpConfig: SmtpConfigInput | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validateDisplayName(cls, value: str | None) -> str | None:
+        return rejectUnsafeText(value, "档案名称") if value is not None else None
+
+    @field_validator("appId")
+    @classmethod
+    def validateAppId(cls, value: str | None) -> str | None:
+        return IrccApplicationSelection.validateAppId(value) if value is not None else None
+
+    @field_validator("applicationNumber", "principalApplicant")
+    @classmethod
+    def validateOptionalText(cls, value: str | None) -> str | None:
+        return IrccApplicationSelection.validateOptionalText(value)
+
+
 class PassportSlotMonitorInput(SecureModel):
     identifier: str = Field(min_length=1, max_length=32)
     isEnabled: bool = True

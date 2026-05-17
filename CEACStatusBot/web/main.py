@@ -27,6 +27,19 @@ from .case_service import (
 )
 from .config import getSettings
 from .database import getConnection, initializeDatabase, utcNowIso
+from .ircc_portal_service import (
+    createIrccCase,
+    deleteIrccCase,
+    discoverIrccApplications,
+    enqueueDueIrccCases,
+    enqueueIrccCaseQuery,
+    getIrccCase,
+    getIrccQueryJob,
+    listIrccCases,
+    listIrccHistory,
+    patchIrccCase,
+    sendCurrentIrccEmail,
+)
 from .mailer import getSystemSmtpConfigPublic, saveSystemSmtpConfig, sendSystemEmail
 from .passport_slot_service import (
     enqueueDuePassportSlotMonitors,
@@ -41,6 +54,9 @@ from .schemas import (
     AccountTierPatch,
     CeacCaseInput,
     CeacCasePatch,
+    IrccCaseInput,
+    IrccCasePatch,
+    IrccDiscoverRequest,
     LoginRequest,
     PasswordResetCodeRequest,
     PasswordResetRequest,
@@ -257,7 +273,23 @@ def enforceDailyManualQueryLimit(user: dict) -> None:
                 tomorrowStart.isoformat(),
             ),
         ).fetchone()
-    queryCount = int(row["query_count"] if row else 0)
+        irccRow = connection.execute(
+            """
+            SELECT COUNT(*) AS query_count
+            FROM ircc_query_jobs j
+            JOIN ircc_cases c ON c.id = j.case_id
+            WHERE c.user_id = ?
+              AND j.trigger_type = 'ircc_manual'
+              AND j.created_at >= ?
+              AND j.created_at < ?
+            """,
+            (
+                int(user["id"]),
+                todayStart.isoformat(),
+                tomorrowStart.isoformat(),
+            ),
+        ).fetchone()
+    queryCount = int(row["query_count"] if row else 0) + int(irccRow["query_count"] if irccRow else 0)
     if queryCount >= queryLimit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -283,6 +315,15 @@ def runDuePassportSlotMonitors() -> None:
         print(f"[scheduler] enqueue GTS failed: {exc}")
 
 
+def runDueIrccCases() -> None:
+    try:
+        queued = enqueueDueIrccCases()
+        if queued:
+            print(f"[scheduler] queued {len(queued)} IRCC query job(s)")
+    except Exception as exc:
+        print(f"[scheduler] enqueue IRCC failed: {exc}")
+
+
 def parseOptionalIso(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -294,7 +335,7 @@ def parseOptionalIso(value: str | None) -> datetime | None:
 
 def latestUserStatusOrSlotActivity(user: dict) -> datetime:
     candidates = [parseOptionalIso(user.get("created_at")) or datetime.now(UTC)]
-    for key in ("latest_status_at", "latest_slot_at"):
+    for key in ("latest_status_at", "latest_slot_at", "latest_ircc_at"):
         parsed = parseOptionalIso(user.get(key))
         if parsed:
             candidates.append(parsed)
@@ -324,7 +365,13 @@ def processInactiveAccounts() -> None:
                     FROM passport_slot_history ph
                     JOIN ceac_cases c ON c.id = ph.case_id
                     WHERE c.user_id = u.id
-                ) AS latest_slot_at
+                ) AS latest_slot_at,
+                (
+                    SELECT max(ih.fetched_at)
+                    FROM ircc_status_history ih
+                    JOIN ircc_cases ic ON ic.id = ih.case_id
+                    WHERE ic.user_id = u.id
+                ) AS latest_ircc_at
             FROM users u
             WHERE u.role != 'admin'
             """,
@@ -396,6 +443,7 @@ def onStartup() -> None:
     if not scheduler.running:
         scheduler.add_job(runDueCases, "interval", minutes=1, id="run-due-cases", replace_existing=True)
         scheduler.add_job(runDuePassportSlotMonitors, "interval", seconds=1, id="run-due-passport-slot-monitors", replace_existing=True)
+        scheduler.add_job(runDueIrccCases, "interval", minutes=1, id="run-due-ircc-cases", replace_existing=True)
         scheduler.add_job(runInactiveAccountCleanup, "interval", hours=6, id="run-inactive-account-cleanup", replace_existing=True)
         scheduler.start()
 
@@ -817,6 +865,89 @@ def apiTestPassportSlotMonitorEmail(caseId: int, user: dict = Depends(currentUse
     if not payload["success"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=payload["error"])
     return payload
+
+
+@app.post("/api/ircc/applications/discover")
+def apiDiscoverIrccApplications(payload: IrccDiscoverRequest, user: dict = Depends(currentUserDependency)) -> dict:
+    try:
+        return discoverIrccApplications(int(user["id"]), payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.get("/api/ircc/cases")
+def apiListIrccCases(user: dict = Depends(currentUserDependency)) -> dict:
+    return {"cases": listIrccCases(int(user["id"]))}
+
+
+@app.post("/api/ircc/cases")
+def apiCreateIrccCase(payload: IrccCaseInput, user: dict = Depends(currentUserDependency)) -> dict:
+    try:
+        case = createIrccCase(int(user["id"]), payload)
+        initialQueryJob = None
+        if payload.isEnabled:
+            job = enqueueIrccCaseQuery(int(case["id"]), "ircc_automatic", int(user["id"]))
+            if job:
+                initialQueryJob = {"jobId": job["id"], "status": job["status"]}
+        return {"case": case, "initialQueryJob": initialQueryJob}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.patch("/api/ircc/cases/{caseId}")
+def apiPatchIrccCase(caseId: int, payload: IrccCasePatch, user: dict = Depends(currentUserDependency)) -> dict:
+    try:
+        case = patchIrccCase(caseId, int(user["id"]), payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IRCC 档案不存在")
+    return {"case": case}
+
+
+@app.delete("/api/ircc/cases/{caseId}")
+def apiDeleteIrccCase(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    if not deleteIrccCase(caseId, int(user["id"])):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IRCC 档案不存在")
+    return {"ok": True}
+
+
+@app.get("/api/ircc/cases/{caseId}/history")
+def apiIrccHistory(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    if not getIrccCase(caseId, int(user["id"])):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IRCC 档案不存在")
+    return {"history": listIrccHistory(caseId, int(user["id"]))}
+
+
+@app.post("/api/ircc/cases/{caseId}/test-query")
+def apiTestIrccQuery(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    enforceDailyManualQueryLimit(user)
+    job = enqueueIrccCaseQuery(caseId, "ircc_manual", int(user["id"]))
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IRCC 档案不存在")
+    return {"jobId": job["id"], "status": job["status"]}
+
+
+@app.post("/api/ircc/cases/{caseId}/test-email")
+def apiTestIrccEmail(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    payload = sendCurrentIrccEmail(caseId, int(user["id"]))
+    if not payload["success"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=payload["error"])
+    return payload
+
+
+@app.get("/api/ircc/query-jobs/{jobId}")
+def apiIrccQueryJob(jobId: int, user: dict = Depends(currentUserDependency)) -> dict:
+    job = getIrccQueryJob(jobId, int(user["id"]))
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="IRCC 查询任务不存在")
+    return {"job": job}
 
 
 @app.get("/api/admin/users")

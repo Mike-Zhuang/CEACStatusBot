@@ -238,6 +238,89 @@ def initializeDatabase() -> None:
                 FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS ircc_portal_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                portal_email_encrypted TEXT NOT NULL,
+                portal_password_encrypted TEXT NOT NULL,
+                token_cache_encrypted TEXT NOT NULL DEFAULT '',
+                auth_status TEXT NOT NULL DEFAULT 'unknown',
+                last_auth_error TEXT NOT NULL DEFAULT '',
+                last_authenticated_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id, portal_email_encrypted)
+            );
+
+            CREATE TABLE IF NOT EXISTS ircc_cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                account_id INTEGER NOT NULL,
+                display_name TEXT NOT NULL,
+                app_id TEXT NOT NULL,
+                application_number TEXT NOT NULL DEFAULT '',
+                principal_applicant TEXT NOT NULL DEFAULT '',
+                receive_email TEXT NOT NULL,
+                sender_mode TEXT NOT NULL DEFAULT 'system',
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
+                next_check_at TEXT,
+                last_checked_at TEXT,
+                last_trigger_type TEXT,
+                last_snapshot_hash TEXT NOT NULL DEFAULT '',
+                last_summary TEXT NOT NULL DEFAULT '',
+                last_error_message TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (account_id) REFERENCES ircc_portal_accounts(id) ON DELETE CASCADE,
+                UNIQUE(user_id, app_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS ircc_status_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id INTEGER NOT NULL,
+                snapshot_hash TEXT NOT NULL,
+                application_status TEXT NOT NULL DEFAULT '',
+                application_info_status TEXT NOT NULL DEFAULT '',
+                message_count INTEGER NOT NULL DEFAULT 0,
+                change_summary TEXT NOT NULL DEFAULT '',
+                fetched_at TEXT NOT NULL,
+                raw_payload TEXT NOT NULL,
+                notification_sent INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (case_id) REFERENCES ircc_cases(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS ircc_query_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT NOT NULL,
+                success INTEGER NOT NULL,
+                error_message TEXT NOT NULL DEFAULT '',
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                trigger_type TEXT NOT NULL DEFAULT 'unknown',
+                FOREIGN KEY (case_id) REFERENCES ircc_cases(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS ircc_query_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id INTEGER NOT NULL,
+                trigger_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                locked_at TEXT,
+                locked_by TEXT,
+                started_at TEXT,
+                finished_at TEXT,
+                error_message TEXT NOT NULL DEFAULT '',
+                result_json TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (case_id) REFERENCES ircc_cases(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS email_delivery_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -261,6 +344,12 @@ def initializeDatabase() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_rate_limit_counters_expires
             ON rate_limit_counters(expires_at);
+
+            CREATE INDEX IF NOT EXISTS idx_ircc_cases_due
+            ON ircc_cases(is_enabled, next_check_at);
+
+            CREATE INDEX IF NOT EXISTS idx_ircc_query_jobs_status
+            ON ircc_query_jobs(status, created_at);
             """
         )
         columns = {

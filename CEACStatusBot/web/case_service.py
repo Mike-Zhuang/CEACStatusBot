@@ -242,7 +242,8 @@ def createCase(userId: int, payload: CeacCaseInput) -> dict[str, Any]:
             raise ValueError("开启邮件推送时必须填写接收提醒邮箱。")
         if user.get("role") != "admin":
             caseCountRow = connection.execute("SELECT COUNT(*) AS case_count FROM ceac_cases WHERE user_id = ?", (userId,)).fetchone()
-            caseCount = int(caseCountRow["case_count"] if caseCountRow else 0)
+            irccCaseCountRow = connection.execute("SELECT COUNT(*) AS case_count FROM ircc_cases WHERE user_id = ?", (userId,)).fetchone()
+            caseCount = int(caseCountRow["case_count"] if caseCountRow else 0) + int(irccCaseCountRow["case_count"] if irccCaseCountRow else 0)
             caseLimit = PREMIUM_CASE_LIMIT if user.get("account_tier") == "premium" else STANDARD_CASE_LIMIT
             if caseCount >= caseLimit:
                 raise ValueError(f"当前账号最多可添加 {caseLimit} 个档案，请联系管理员升级账号。")

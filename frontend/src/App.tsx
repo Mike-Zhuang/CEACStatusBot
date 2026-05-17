@@ -24,6 +24,7 @@ type ViewMode = "dashboard" | "profile" | "admin";
 type AuthMode = "login" | "register" | "forgot";
 type AccountTier = "standard" | "premium";
 type MessageScope = ViewMode | "auth";
+type ProfileCountry = "us" | "ca";
 
 interface User {
   id: number;
@@ -68,6 +69,56 @@ interface CeacCase {
   } | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface IrccCase {
+  id: number;
+  userId: number;
+  displayName: string;
+  portalEmailMasked: string;
+  appId: string;
+  applicationNumber: string;
+  principalApplicant: string;
+  receiveEmail: string;
+  senderMode: "system" | "custom";
+  isEnabled: boolean;
+  emailNotificationsEnabled: boolean;
+  nextCheckAt: string | null;
+  lastCheckedAt: string | null;
+  lastTriggerType: "ircc_manual" | "ircc_automatic" | "unknown" | null;
+  lastSnapshotHash: string;
+  lastSummary: string;
+  lastErrorMessage: string;
+  latestSnapshot: IrccSnapshot | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface IrccSnapshot {
+  applicationInfo?: Record<string, unknown>;
+  appStatus?: Record<string, unknown>;
+  messages?: Array<Record<string, unknown>>;
+}
+
+interface IrccHistoryItem {
+  id: number;
+  caseId: number;
+  snapshotHash: string;
+  applicationStatus: string;
+  applicationInfoStatus: string;
+  messageCount: number;
+  changeSummary: string;
+  fetchedAt: string;
+  rawPayload: IrccSnapshot;
+  notificationSent: boolean;
+}
+
+interface IrccDiscoveredApplication {
+  appId: string;
+  applicationNumber: string;
+  principalApplicant: string;
+  status: string;
+  submittedAt: string;
 }
 
 interface HistoryItem {
@@ -159,6 +210,25 @@ interface QueryJob {
     slotStatus?: "not_eligible" | "no_slot" | "has_slot" | "unknown";
     slotCount?: number;
     notified?: boolean;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+interface IrccQueryJob {
+  id: number;
+  caseId: number;
+  triggerType: "ircc_manual" | "ircc_automatic";
+  status: "queued" | "running" | "succeeded" | "failed";
+  attempts: number;
+  errorMessage: string;
+  result: {
+    success: boolean;
+    changed: boolean;
+    error: string;
+    summary?: string;
   } | null;
   createdAt: string;
   updatedAt: string;
@@ -272,6 +342,24 @@ interface CaseForm {
   smtpPassword: string;
 }
 
+interface IrccCaseForm {
+  displayName: string;
+  portalEmail: string;
+  portalPassword: string;
+  appId: string;
+  applicationNumber: string;
+  principalApplicant: string;
+  receiveEmail: string;
+  senderMode: "system" | "custom";
+  isEnabled: boolean;
+  emailNotificationsEnabled: boolean;
+  smtpFromEmail: string;
+  smtpHost: string;
+  smtpPort: string;
+  smtpUseSsl: boolean;
+  smtpPassword: string;
+}
+
 const emptyCaseForm: CaseForm = {
   displayName: "",
   location: "CHINA, BEIJING",
@@ -289,8 +377,30 @@ const emptyCaseForm: CaseForm = {
   smtpPassword: "",
 };
 
+const emptyIrccCaseForm: IrccCaseForm = {
+  displayName: "",
+  portalEmail: "",
+  portalPassword: "",
+  appId: "",
+  applicationNumber: "",
+  principalApplicant: "",
+  receiveEmail: "",
+  senderMode: "system",
+  isEnabled: true,
+  emailNotificationsEnabled: true,
+  smtpFromEmail: "",
+  smtpHost: "smtp.exmail.qq.com",
+  smtpPort: "465",
+  smtpUseSsl: true,
+  smtpPassword: "",
+};
+
 function createEmptyCaseForm(defaultEmail = ""): CaseForm {
   return { ...emptyCaseForm, receiveEmail: defaultEmail };
+}
+
+function createEmptyIrccCaseForm(defaultEmail = ""): IrccCaseForm {
+  return { ...emptyIrccCaseForm, receiveEmail: defaultEmail };
 }
 
 const icpRecordNumber = import.meta.env.VITE_ICP_RECORD_NUMBER as string | undefined;
@@ -304,28 +414,28 @@ const legalTerms = {
     {
       title: "1. Nature of Service and Non-official Status",
       body: [
-        "CEACStatusBot is a nonprofit personal project for learning, research, and convenience tooling for the site owner and authorized users. It is not affiliated with, endorsed by, sponsored by, or operated by the U.S. Department of State, CEAC, GTS, CITIC Bank, any consulate, embassy, visa center, or other official institution.",
+        "CEACStatusBot is a nonprofit personal project for learning, research, and convenience tooling for the site owner and authorized users. It is not affiliated with, endorsed by, sponsored by, or operated by the U.S. Department of State, CEAC, GTS, CITIC Bank, IRCC, the Government of Canada, any consulate, embassy, visa center, or other official institution.",
         "This site does not provide visa agency services, official appointment services, legal services, immigration consulting, paid official processing, automatic booking, slot holding, or slot grabbing.",
       ],
     },
     {
       title: "2. User Authorization and Required Information",
       body: [
-        "By registering, creating a profile, or enabling monitoring, you confirm that you are the data subject or have obtained lawful authorization from the data subject, and you authorize this site to process the information you submit only for CEAC status checking, GTS slot detection, email notification, account operation, abuse prevention, security audit, and necessary maintenance.",
-        "You are responsible for the accuracy, legality, and authorization status of Application ID / Case Number, passport number, surname initials, UID/HAL, email address, and related information submitted by you.",
+        "By registering, creating a profile, or enabling monitoring, you confirm that you are the data subject or have obtained lawful authorization from the data subject, and you authorize this site to process the information you submit only for CEAC status checking, GTS slot detection, IRCC Portal status checking, email notification, account operation, abuse prevention, security audit, and necessary maintenance.",
+        "You are responsible for the accuracy, legality, and authorization status of Application ID / Case Number, passport number, surname initials, UID/HAL, IRCC Portal credentials, email address, and related information submitted by you.",
       ],
     },
     {
       title: "3. Cross-border Query Authorization",
       body: [
-        "You understand and agree that, to perform CEAC status checks and GTS slot detection, this site may submit necessary profile information, including but not limited to Application ID / Case Number, passport number, surname initials, UID/HAL, and related query parameters, to CEAC, GTS, and other official or third-party systems that may be located outside mainland China.",
+        "You understand and agree that, to perform CEAC status checks, GTS slot detection, and IRCC Portal status checks, this site may submit necessary profile information, including but not limited to Application ID / Case Number, passport number, surname initials, UID/HAL, IRCC Portal credentials, tokens, appId, and related query parameters, to CEAC, GTS, IRCC Portal, and other official or third-party systems that may be located outside mainland China.",
         "Such transmission is performed only for the query functions you enable or manually trigger. If you do not agree to this cross-border query processing, do not create a profile, enable monitoring, or use the query features.",
       ],
     },
     {
       title: "4. Third-party Dependence and No Guarantee",
       body: [
-        "CEAC and GTS are independent third-party websites. Query results may be delayed, unavailable, incomplete, blocked, changed, or incorrect because of third-party maintenance, network conditions, CAPTCHA recognition, rate limits, interface changes, or user input errors.",
+        "CEAC, GTS, and IRCC Portal are independent third-party websites. Query results may be delayed, unavailable, incomplete, blocked, changed, or incorrect because of third-party maintenance, network conditions, CAPTCHA recognition, rate limits, interface changes, authentication requirements, or user input errors.",
         "This site does not guarantee visa results, passport progress, CEAC status accuracy, slot availability, booking success, query timeliness, uninterrupted service, or that any notification will be received before a slot changes or disappears.",
       ],
     },
@@ -339,8 +449,8 @@ const legalTerms = {
     {
       title: "6. Data Protection, Retention, and User Responsibility",
       body: [
-        "Sensitive profile fields, UID/HAL, SMTP secrets, and raw query snapshots are encrypted at rest where supported by the application. The site also uses rate limits, session controls, security logs, and other protective measures, but no online system can be guaranteed to be absolutely secure.",
-        "To reduce long-term retention of personal information, if an account has no new CEAC status history or GTS slot-change history for about 15 days, the site may send a deletion warning. If there is still no new status or slot activity for about another 15 days, meaning about 30 days in total, the account and related profile data may be automatically deleted.",
+        "Sensitive profile fields, UID/HAL, IRCC Portal credentials and tokens, SMTP secrets, and raw query snapshots are encrypted at rest where supported by the application. The site also uses rate limits, session controls, security logs, and other protective measures, but no online system can be guaranteed to be absolutely secure.",
+        "To reduce long-term retention of personal information, if an account has no new CEAC status history, GTS slot-change history, or IRCC status history for about 15 days, the site may send a deletion warning. If there is still no new status or slot activity for about another 15 days, meaning about 30 days in total, the account and related profile data may be automatically deleted.",
         "You should keep your account password, UID/HAL, passport information, screenshots, emails, and notification content confidential. Do not forward or publicly post emails or screenshots containing personal or passport-related information.",
       ],
     },
@@ -363,28 +473,28 @@ const legalTerms = {
     {
       title: "一、服务性质与非官方声明",
       body: [
-        "CEACStatusBot 是非盈利个人项目，主要用于学习研究，以及为站长和经授权用户提供公开状态查询的便利工具。本站不隶属于美国国务院、CEAC、GTS、中信银行、任何使领馆、签证中心或其他官方机构，也不代表上述机构提供服务。",
+        "CEACStatusBot 是非盈利个人项目，主要用于学习研究，以及为站长和经授权用户提供公开状态查询的便利工具。本站不隶属于美国国务院、CEAC、GTS、中信银行、IRCC、加拿大政府、任何使领馆、签证中心或其他官方机构，也不代表上述机构提供服务。",
         "本站不提供签证代理、官方预约、法律服务、移民咨询、有偿官方代办、自动预约、自动占位或抢 slot 服务。",
       ],
     },
     {
       title: "二、用户授权与必要信息",
       body: [
-        "你注册、创建档案或启用监控，即确认你本人为相关信息主体，或已取得信息主体的合法授权；你授权本站仅为 CEAC 状态查询、GTS slot 检测、邮件通知、账号管理、防滥用、安全审计和必要维护处理你提交的信息。",
-        "你应自行确保提交的 Application ID / Case Number、护照号、姓氏前几位、UID/HAL、邮箱和其他信息真实、准确、合法且已获授权。",
+        "你注册、创建档案或启用监控，即确认你本人为相关信息主体，或已取得信息主体的合法授权；你授权本站仅为 CEAC 状态查询、GTS slot 检测、IRCC Portal 状态查询、邮件通知、账号管理、防滥用、安全审计和必要维护处理你提交的信息。",
+        "你应自行确保提交的 Application ID / Case Number、护照号、姓氏前几位、UID/HAL、IRCC Portal 凭证、邮箱和其他信息真实、准确、合法且已获授权。",
       ],
     },
     {
       title: "三、跨境查询授权",
       body: [
-        "你理解并同意，为执行 CEAC 状态查询和 GTS slot 检测，本站可能将必要的档案信息，包括但不限于 Application ID / Case Number、护照号、姓氏前几位、UID/HAL 及相关查询参数，提交至 CEAC、GTS 或其他可能位于中国大陆境外的官方或第三方系统。",
+        "你理解并同意，为执行 CEAC 状态查询、GTS slot 检测和 IRCC Portal 状态查询，本站可能将必要的档案信息，包括但不限于 Application ID / Case Number、护照号、姓氏前几位、UID/HAL、IRCC Portal 凭证、token、appId 及相关查询参数，提交至 CEAC、GTS、IRCC Portal 或其他可能位于中国大陆境外的官方或第三方系统。",
         "上述传输仅用于你启用或手动触发的查询功能。如果你不同意此类跨境查询处理，请不要创建档案、启用监控或使用查询功能。",
       ],
     },
     {
       title: "四、第三方依赖与不保证事项",
       body: [
-        "CEAC 和 GTS 均为独立第三方网站。查询结果可能因第三方维护、网络波动、验证码识别、接口限流、页面结构变化或用户输入错误而延迟、不可用、不完整、被拦截或不准确。",
+        "CEAC、GTS 和 IRCC Portal 均为独立第三方网站。查询结果可能因第三方维护、网络波动、验证码识别、接口限流、页面结构变化、登录验证要求或用户输入错误而延迟、不可用、不完整、被拦截或不准确。",
         "本站不保证签证结果、护照进度、CEAC 状态准确性、slot 可用性、预约成功、查询时效、服务不中断，也不保证任何提醒一定早于 slot 变化或消失送达。",
       ],
     },
@@ -398,8 +508,8 @@ const legalTerms = {
     {
       title: "六、数据保护、保留期限与用户责任",
       body: [
-        "在应用支持范围内，CEAC 档案敏感字段、UID/HAL、SMTP 密钥和原始查询快照会进行加密存储；本站也会使用限流、会话控制、安全日志等措施降低风险，但任何在线系统都无法承诺绝对安全。",
-        "为减少个人信息长期保存风险，如果账号约 15 天没有新的 CEAC 状态历史或 GTS slot 变化历史，系统可能发送删除提醒；提醒后约 15 天仍无新的状态或 slot 动态，即总计约 30 天无动态时，系统可能自动删除该账号和相关档案数据。",
+        "在应用支持范围内，CEAC 档案敏感字段、UID/HAL、IRCC Portal 凭证和 token、SMTP 密钥和原始查询快照会进行加密存储；本站也会使用限流、会话控制、安全日志等措施降低风险，但任何在线系统都无法承诺绝对安全。",
+        "为减少个人信息长期保存风险，如果账号约 15 天没有新的 CEAC 状态历史、GTS slot 变化历史或 IRCC 状态历史，系统可能发送删除提醒；提醒后约 15 天仍无新的状态或 slot 动态，即总计约 30 天无动态时，系统可能自动删除该账号和相关档案数据。",
         "你应妥善保管账号密码、UID/HAL、护照信息、截图、邮件和通知内容，不应转发或公开包含个人信息、护照信息或预约识别信息的邮件和截图。",
       ],
     },
@@ -433,8 +543,8 @@ const translations = {
     accountTierCurrent: "Current tier",
     appSubtitle: "Visa status monitoring, query history, and email delivery.",
     publicNoticeTitle: "Service notice",
-    publicNoticeBody: "CEACStatusBot is a non-official, nonprofit personal project for learning, research, and convenient status checking by the site owner and authorized users. It is not affiliated with the U.S. Department of State, CEAC, GTS, or CITIC Bank.",
-    publicNoticeDisclaimer: "This site does not provide visa agency services, official appointment services, automatic booking, slot holding, result guarantees, or any official government or bank service. Query results depend on third-party websites and may be delayed, unavailable, incomplete, or incorrect.",
+    publicNoticeBody: "CEACStatusBot is a non-official, nonprofit personal project for learning, research, and convenient status checking by the site owner and authorized users. It is not affiliated with the U.S. Department of State, CEAC, GTS, CITIC Bank, IRCC, or the Government of Canada.",
+    publicNoticeDisclaimer: "This site does not provide visa agency services, official appointment services, immigration consulting, automatic booking, slot holding, result guarantees, or any official government or bank service. Query results depend on third-party websites and may be delayed, unavailable, incomplete, or incorrect.",
     acceptTerms: "I have read and agree to the Terms of Use and Disclaimer.",
     termsTitle: "Terms of Use and Disclaimer",
     termsBody: "Please review the full terms before creating an account. Registration means you confirm authorization to submit the information, accept the non-official and nonprofit nature of this service, and understand the third-party and no-guarantee limitations.",
@@ -614,7 +724,7 @@ const translations = {
     supportTitle: "Support this nonprofit project",
     supportBody: "If CEACStatusBot helps you, voluntary support helps cover server and maintenance costs.",
     supportPremium: "Premium upgrade: share a Xiaohongshu post with the site link, screenshots, and your experience, then contact the admin; or leave your account email in the donation note for manual review.",
-    supportDisclaimer: "Non-official service. Not affiliated with the U.S. Department of State, CEAC, GTS, or CITIC Bank. Donations are voluntary support, not a purchase of official services, and do not guarantee visa results, passport progress, slot availability, or booking success. Do not publicly share screenshots containing UID/HAL/passport data.",
+    supportDisclaimer: "Non-official service. Not affiliated with the U.S. Department of State, CEAC, GTS, CITIC Bank, IRCC, or the Government of Canada. Donations are voluntary support, not a purchase of official services, and do not guarantee visa results, passport progress, slot availability, or booking success. Do not publicly share screenshots containing UID/HAL/passport/IRCC data.",
     nonprofitNotice: "Nonprofit personal project",
     contactEmail: "Contact: ceac-admin@mikezhuang.cn",
     sourceCode: "Source code",
@@ -624,6 +734,34 @@ const translations = {
     workerPrioritySaved: "Worker priority saved.",
     noPassportSlotMonitor: "No UID/HAL monitor yet",
     noPassportSlotHistory: "No slot changes yet",
+    country: "Country",
+    countryUnitedStates: "United States",
+    countryCanada: "Canada",
+    irccAlphaLabel: "Alpha",
+    irccPortalTitle: "IRCC Portal monitor",
+    irccPortalIntro: "Alpha: only the current IRCC Portal is supported. Use carefully; IRCC Portal - New version and GCKey are planned for the future.",
+    irccPortalEmail: "IRCC Portal email",
+    irccPortalPassword: "IRCC Portal password",
+    irccDiscoverApplications: "Find submitted applications",
+    irccApplicationFound: "Applications found. Select one or enter appId manually.",
+    irccApplicationSelect: "Submitted application",
+    irccAppId: "IRCC appId",
+    irccApplicationNumber: "Application number",
+    irccPrincipalApplicant: "Principal applicant",
+    irccSave: "Save IRCC profile",
+    irccQuerying: "Querying IRCC Portal. Please wait.",
+    irccQueued: "Your IRCC query is queued.",
+    irccChanged: "IRCC query completed: snapshot changed.",
+    irccUnchanged: "IRCC query completed: snapshot unchanged.",
+    irccTestEmail: "Test IRCC email",
+    irccTestEmailSending: "Sending IRCC test email.",
+    irccTestEmailSent: "IRCC test email sent.",
+    irccApplicationStatus: "Application status",
+    irccApplicantInfo: "Applicant information",
+    irccMessages: "Messages",
+    irccGhostUpdate: "Ghost update is tracked from the submitted applications page.",
+    irccLastError: "Latest IRCC issue",
+    irccNoHistory: "No IRCC history yet",
   },
   zh: {
     admin: "管理员",
@@ -637,8 +775,8 @@ const translations = {
     accountTierCurrent: "当前账号等级",
     appSubtitle: "签证状态监控、查询历史与邮件提醒。",
     publicNoticeTitle: "服务说明 / 风险提示",
-    publicNoticeBody: "CEACStatusBot 是非官方、非盈利个人项目，仅用于学习研究，以及方便站长和授权用户查询公开状态。本项目不隶属于美国国务院、CEAC、GTS 或中信银行。",
-    publicNoticeDisclaimer: "本站不提供签证代理、官方预约、自动抢号、占位、结果保证或任何官方/银行服务。查询结果依赖第三方网站，可能存在延迟、不可用、不完整或错误。",
+    publicNoticeBody: "CEACStatusBot 是非官方、非盈利个人项目，仅用于学习研究，以及方便站长和授权用户查询公开状态。本项目不隶属于美国国务院、CEAC、GTS、中信银行、IRCC 或加拿大政府。",
+    publicNoticeDisclaimer: "本站不提供签证代理、官方预约、移民咨询、自动抢号、占位、结果保证或任何官方/银行/政府服务。查询结果依赖第三方网站，可能存在延迟、不可用、不完整或错误。",
     acceptTerms: "我已阅读并同意用户条款和免责声明。",
     termsTitle: "用户条款和免责声明",
     termsBody: "创建账号前请先查看完整条款。注册即表示你确认提交信息已获授权，理解本站非官方、非盈利的服务性质，并接受第三方依赖和不保证事项。",
@@ -818,7 +956,7 @@ const translations = {
     supportTitle: "支持这个非盈利项目",
     supportBody: "如果 CEACStatusBot 对你有帮助，欢迎自愿赞赏支持服务器和维护成本。",
     supportPremium: "Premium 升级方式：在小红书发布包含网站链接、使用截图和使用感受的帖子后联系管理员；或赞赏时备注账号邮箱，管理员人工核对后升级。",
-    supportDisclaimer: "本站为非官方服务，不隶属于美国国务院、CEAC、GTS 或中信银行。赞赏是自愿支持，不购买官方服务，不保证签证结果、护照进度、slot 可用性或预约成功。请勿公开截图泄露 UID/HAL/护照等个人信息。",
+    supportDisclaimer: "本站为非官方服务，不隶属于美国国务院、CEAC、GTS、中信银行、IRCC 或加拿大政府。赞赏是自愿支持，不购买官方服务，不保证签证结果、护照进度、slot 可用性、IRCC 更新或预约成功。请勿公开截图泄露 UID/HAL/护照/IRCC 等个人信息。",
     nonprofitNotice: "非盈利个人项目",
     contactEmail: "联系邮箱：ceac-admin@mikezhuang.cn",
     sourceCode: "开源仓库",
@@ -828,6 +966,34 @@ const translations = {
     workerPrioritySaved: "Worker 优先级已保存。",
     noPassportSlotMonitor: "尚未配置 UID/HAL 监控",
     noPassportSlotHistory: "暂无 slot 变化记录",
+    country: "国家",
+    countryUnitedStates: "美国",
+    countryCanada: "加拿大",
+    irccAlphaLabel: "Alpha",
+    irccPortalTitle: "IRCC Portal 监控",
+    irccPortalIntro: "Alpha：当前仅支持 IRCC Portal。请谨慎使用，未经充分测试；未来计划支持 IRCC Portal – New version 和 GCKey。",
+    irccPortalEmail: "IRCC Portal 邮箱",
+    irccPortalPassword: "IRCC Portal 密码",
+    irccDiscoverApplications: "发现已提交申请",
+    irccApplicationFound: "已发现申请。请选择一项，或手动填写 appId。",
+    irccApplicationSelect: "已提交申请",
+    irccAppId: "IRCC appId",
+    irccApplicationNumber: "Application number",
+    irccPrincipalApplicant: "主申请人",
+    irccSave: "保存 IRCC 档案",
+    irccQuerying: "正在查询 IRCC Portal，请稍候。",
+    irccQueued: "IRCC 查询已加入队列。",
+    irccChanged: "IRCC 查询完成：快照已变化。",
+    irccUnchanged: "IRCC 查询完成：快照未变化。",
+    irccTestEmail: "测试 IRCC 邮件",
+    irccTestEmailSending: "正在发送 IRCC 测试邮件。",
+    irccTestEmailSent: "IRCC 测试邮件已发送。",
+    irccApplicationStatus: "申请状态",
+    irccApplicantInfo: "申请人信息",
+    irccMessages: "申请消息",
+    irccGhostUpdate: "首页 submitted applications 的更新时间会用于捕捉 ghost update。",
+    irccLastError: "最近 IRCC 问题",
+    irccNoHistory: "暂无 IRCC 历史记录",
   },
 } as const;
 
@@ -877,6 +1043,31 @@ async function waitForQueryJob(
   return job;
 }
 
+async function waitForIrccQueryJob(
+  jobId: number,
+  onStatusChange?: (status: IrccQueryJob["status"]) => void,
+): Promise<IrccQueryJob | null> {
+  let job: IrccQueryJob | null = null;
+  const queueWaitStartedAt = Date.now();
+  let lastStatus: IrccQueryJob["status"] | null = null;
+  while (true) {
+    const jobPayload = await requestJson<{ job: IrccQueryJob }>(`/api/ircc/query-jobs/${jobId}`);
+    job = jobPayload.job;
+    if (job.status !== lastStatus) {
+      lastStatus = job.status;
+      onStatusChange?.(job.status);
+    }
+    if (job.status === "succeeded" || job.status === "failed") {
+      break;
+    }
+    if (job.status === "queued" && Date.now() - queueWaitStartedAt >= QUERY_JOB_QUEUE_WAIT_MS) {
+      break;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, QUERY_JOB_POLL_INTERVAL_MS));
+  }
+  return job;
+}
+
 function getInitialTheme(): ThemeMode {
   const stored = localStorage.getItem("themeMode");
   if (stored === "dark" || stored === "light") {
@@ -907,7 +1098,13 @@ function formatDurationSeconds(seconds: number): string {
   return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
 }
 
-function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryRun["trigger_type"], t: (key: TranslationKey) => string): string {
+function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryRun["trigger_type"] | IrccCase["lastTriggerType"], t: (key: TranslationKey) => string): string {
+  if (value === "ircc_manual") {
+    return `${t("irccPortalTitle")} · ${t("triggerManual")}`;
+  }
+  if (value === "ircc_automatic") {
+    return `${t("irccPortalTitle")} · ${t("triggerAutomatic")}`;
+  }
   if (value === "passport_slot_manual") {
     return `${t("passportSlotMonitor")} · ${t("triggerManual")}`;
   }
@@ -973,9 +1170,11 @@ export function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [user, setUser] = useState<User | null>(null);
   const [cases, setCases] = useState<CeacCase[]>([]);
+  const [irccCases, setIrccCases] = useState<IrccCase[]>([]);
   const [adminCases, setAdminCases] = useState<CeacCase[]>([]);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [irccHistory, setIrccHistory] = useState<IrccHistoryItem[]>([]);
   const [passportSlotMonitor, setPassportSlotMonitor] = useState<PassportSlotMonitor | null>(null);
   const [passportSlotHistory, setPassportSlotHistory] = useState<PassportSlotHistoryItem[]>([]);
   const [passportSlotIdentifier, setPassportSlotIdentifier] = useState("");
@@ -993,7 +1192,11 @@ export function App() {
     password: "",
   });
   const [selectedCaseId, setSelectedCaseId] = useState<number | null>(null);
+  const [selectedIrccCaseId, setSelectedIrccCaseId] = useState<number | null>(null);
+  const [newProfileCountry, setNewProfileCountry] = useState<ProfileCountry>("us");
   const [caseForm, setCaseForm] = useState<CaseForm>(emptyCaseForm);
+  const [irccCaseForm, setIrccCaseForm] = useState<IrccCaseForm>(emptyIrccCaseForm);
+  const [irccApplications, setIrccApplications] = useState<IrccDiscoveredApplication[]>([]);
   const [profileForm, setProfileForm] = useState<ProfileForm>({
     email: "",
     currentPassword: "",
@@ -1036,7 +1239,9 @@ export function App() {
         setUser(payload.user);
         setProfileForm((current) => ({ ...current, email: payload.user.email }));
         setCaseForm((current) => current.receiveEmail ? current : createEmptyCaseForm(payload.user.email));
+        setIrccCaseForm((current) => current.receiveEmail ? current : createEmptyIrccCaseForm(payload.user.email));
         void loadCases();
+        void loadIrccCases();
       })
       .catch(() => undefined);
   }, []);
@@ -1046,7 +1251,9 @@ export function App() {
       const detail = event instanceof CustomEvent ? String(event.detail || "") : "";
       setUser(null);
       setCases([]);
+      setIrccCases([]);
       setHistory([]);
+      setIrccHistory([]);
       showMessage(detail || (languageMode === "zh" ? "登录已超时，请重新登录。" : "Session expired. Please sign in again."), "auth");
     };
     window.addEventListener("ceac-session-expired", handleSessionExpired);
@@ -1054,8 +1261,12 @@ export function App() {
   }, [languageMode]);
 
   const selectedCase = useMemo(
-    () => cases.find((item) => item.id === selectedCaseId) ?? cases[0] ?? null,
-    [cases, selectedCaseId],
+    () => selectedIrccCaseId === null && selectedCaseId !== null ? cases.find((item) => item.id === selectedCaseId) ?? null : null,
+    [cases, selectedCaseId, selectedIrccCaseId],
+  );
+  const selectedIrccCase = useMemo(
+    () => selectedIrccCaseId === null ? null : irccCases.find((item) => item.id === selectedIrccCaseId) ?? null,
+    [irccCases, selectedIrccCaseId],
   );
 
   useEffect(() => {
@@ -1070,17 +1281,35 @@ export function App() {
     }
   }, [selectedCase?.id]);
 
+  useEffect(() => {
+    if (selectedIrccCase) {
+      void loadIrccHistory(selectedIrccCase.id);
+    } else {
+      setIrccHistory([]);
+    }
+  }, [selectedIrccCase?.id]);
+
   async function loadCases() {
     const payload = await requestJson<{ cases: CeacCase[] }>("/api/cases");
     setCases(payload.cases);
-    if (payload.cases.length > 0) {
+    if (payload.cases.length > 0 && selectedIrccCaseId === null) {
       setSelectedCaseId((current) => current ?? payload.cases[0].id);
     }
+  }
+
+  async function loadIrccCases() {
+    const payload = await requestJson<{ cases: IrccCase[] }>("/api/ircc/cases");
+    setIrccCases(payload.cases);
   }
 
   async function loadHistory(caseId: number) {
     const payload = await requestJson<{ history: HistoryItem[] }>(`/api/cases/${caseId}/history`);
     setHistory(payload.history);
+  }
+
+  async function loadIrccHistory(caseId: number) {
+    const payload = await requestJson<{ history: IrccHistoryItem[] }>(`/api/ircc/cases/${caseId}/history`);
+    setIrccHistory(payload.history);
   }
 
   async function loadPassportSlotMonitor(caseId: number) {
@@ -1325,6 +1554,7 @@ export function App() {
       });
       setCaseForm(createEmptyCaseForm(user?.email ?? ""));
       setSelectedCaseId(result.case.id);
+      setSelectedIrccCaseId(null);
       await loadCases();
       if (result.initialQueryJob) {
         const job = await waitForQueryJob(result.initialQueryJob.jobId, (status) => {
@@ -1344,6 +1574,101 @@ export function App() {
         showMessage(
           queryResult?.success
             ? (queryResult.changed ? t("fastQueryChanged") : t("fastQueryUnchanged"))
+            : (job.errorMessage || queryResult?.error || t("requestFailed")),
+        );
+        return;
+      }
+      showMessage(t("caseCreated"));
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function discoverIrccApplications(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    setIsBusy(true);
+    showMessage("");
+    try {
+      const payload = await requestJson<{ applications: IrccDiscoveredApplication[] }>("/api/ircc/applications/discover", {
+        method: "POST",
+        body: JSON.stringify({
+          portalEmail: irccCaseForm.portalEmail,
+          portalPassword: irccCaseForm.portalPassword,
+        }),
+      });
+      setIrccApplications(payload.applications);
+      const first = payload.applications[0];
+      if (first) {
+        setIrccCaseForm((current) => ({
+          ...current,
+          appId: first.appId,
+          applicationNumber: first.applicationNumber,
+          principalApplicant: first.principalApplicant,
+          displayName: current.displayName || `IRCC ${first.applicationNumber || first.appId}`,
+        }));
+      }
+      showMessage(t("irccApplicationFound"));
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function saveIrccCase(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsBusy(true);
+    showMessage("");
+    try {
+      const payload = {
+        displayName: irccCaseForm.displayName,
+        portalEmail: irccCaseForm.portalEmail,
+        portalPassword: irccCaseForm.portalPassword,
+        appId: irccCaseForm.appId,
+        applicationNumber: irccCaseForm.applicationNumber || null,
+        principalApplicant: irccCaseForm.principalApplicant || null,
+        receiveEmail: irccCaseForm.receiveEmail || null,
+        senderMode: irccCaseForm.senderMode,
+        isEnabled: irccCaseForm.isEnabled,
+        emailNotificationsEnabled: irccCaseForm.emailNotificationsEnabled,
+        smtpConfig: irccCaseForm.senderMode === "custom"
+          ? {
+              fromEmail: irccCaseForm.smtpFromEmail,
+              host: irccCaseForm.smtpHost,
+              port: Number(irccCaseForm.smtpPort),
+              useSsl: irccCaseForm.smtpUseSsl,
+              password: irccCaseForm.smtpPassword,
+            }
+          : null,
+      };
+      const result = await requestJson<{
+        case: IrccCase;
+        initialQueryJob?: { jobId: number; status: IrccQueryJob["status"] } | null;
+      }>("/api/ircc/cases", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setIrccCaseForm(createEmptyIrccCaseForm(user?.email ?? ""));
+      setIrccApplications([]);
+      setSelectedCaseId(null);
+      setSelectedIrccCaseId(result.case.id);
+      await loadIrccCases();
+      if (result.initialQueryJob) {
+        const job = await waitForIrccQueryJob(result.initialQueryJob.jobId, (status) => {
+          showMessage(status === "queued" ? t("irccQueued") : t("irccQuerying"));
+        });
+        await loadIrccCases();
+        await loadIrccHistory(result.case.id);
+        if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
+          showMessage(job?.status === "queued" ? t("irccQueued") : t("irccQuerying"));
+          return;
+        }
+        const queryResult = job.result;
+        showMessage(
+          queryResult?.success
+            ? (queryResult.changed ? t("irccChanged") : t("irccUnchanged"))
             : (job.errorMessage || queryResult?.error || t("requestFailed")),
         );
         return;
@@ -1399,6 +1724,86 @@ export function App() {
         body: "{}",
       });
       showMessage(t("testEmailSent"));
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function runIrccTest(caseId: number) {
+    setIsBusy(true);
+    showMessage(t("irccQuerying"));
+    try {
+      const payload = await requestJson<{ jobId: number; status: IrccQueryJob["status"] }>(`/api/ircc/cases/${caseId}/test-query`, {
+        method: "POST",
+        body: "{}",
+      });
+      const job = await waitForIrccQueryJob(payload.jobId, (status) => {
+        showMessage(status === "queued" ? t("irccQueued") : t("irccQuerying"));
+      });
+      await loadIrccCases();
+      await loadIrccHistory(caseId);
+      if (!job || (job.status !== "succeeded" && job.status !== "failed")) {
+        showMessage(job?.status === "queued" ? t("irccQueued") : t("irccQuerying"));
+        return;
+      }
+      const result = job.result;
+      showMessage(
+        result?.success
+          ? (result.changed ? t("irccChanged") : t("irccUnchanged"))
+          : (job.errorMessage || result?.error || t("requestFailed")),
+      );
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function sendIrccTestEmail(caseId: number) {
+    setIsBusy(true);
+    showMessage(t("irccTestEmailSending"));
+    try {
+      await requestJson<{ success: boolean; error: string }>(`/api/ircc/cases/${caseId}/test-email`, {
+        method: "POST",
+        body: "{}",
+      });
+      showMessage(t("irccTestEmailSent"));
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function toggleIrccEmailPush(targetCase: IrccCase) {
+    setIsBusy(true);
+    showMessage("");
+    try {
+      await requestJson<{ case: IrccCase }>(`/api/ircc/cases/${targetCase.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ emailNotificationsEnabled: !targetCase.emailNotificationsEnabled }),
+      });
+      await loadIrccCases();
+      showMessage(!targetCase.emailNotificationsEnabled ? t("updatePushEnabled") : t("updatePushDisabled"));
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t("requestFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function stopIrccAutomaticQuery(targetCase: IrccCase) {
+    setIsBusy(true);
+    showMessage("");
+    try {
+      await requestJson<{ case: IrccCase }>(`/api/ircc/cases/${targetCase.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isEnabled: false }),
+      });
+      await loadIrccCases();
+      showMessage(t("automaticQueryStopped"));
     } catch (error) {
       showMessage(error instanceof Error ? error.message : t("requestFailed"));
     } finally {
@@ -1634,6 +2039,13 @@ export function App() {
     await loadCases();
   }
 
+  async function removeIrccCase(caseId: number) {
+    await requestJson<{ ok: boolean }>(`/api/ircc/cases/${caseId}`, { method: "DELETE", body: "{}" });
+    setSelectedIrccCaseId(null);
+    setSelectedCaseId(null);
+    await loadIrccCases();
+  }
+
   if (!user) {
     return (
       <main className="auth-shell">
@@ -1822,21 +2234,30 @@ export function App() {
               <section className="panel">
                 <div className="panel-title">
                   <h2 className="headline">{t("caseList")}</h2>
-                  <button className="button secondary" title={t("caseName")} onClick={() => { setSelectedCaseId(null); setCaseForm(createEmptyCaseForm(user.email)); }}>
+                  <button className="button secondary" title={t("caseName")} onClick={() => { setSelectedCaseId(null); setSelectedIrccCaseId(null); setCaseForm(createEmptyCaseForm(user.email)); setIrccCaseForm(createEmptyIrccCaseForm(user.email)); }}>
                     <Plus size={16} /> {t("newProfile")}
                   </button>
                 </div>
                 <div className="case-list">
                   {cases.map((item) => (
-                    <div key={item.id} className={`case-row ${selectedCaseId === item.id ? "selected" : ""}`} onClick={() => setSelectedCaseId(item.id)}>
+                    <div key={`ceac-${item.id}`} className={`case-row ${selectedCaseId === item.id && selectedIrccCaseId === null ? "selected" : ""}`} onClick={() => { setSelectedIrccCaseId(null); setSelectedCaseId(item.id); }}>
                       <div className="case-info">
                         <div className="case-name">{item.displayName}</div>
-                        <div className="case-meta">{item.applicationNum || t("missingCaseNumber")}</div>
+                        <div className="case-meta">{t("countryUnitedStates")} · {item.applicationNum || t("missingCaseNumber")}</div>
                       </div>
                       <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? t("waitFirstQuery")}</span>
                     </div>
                   ))}
-                  {cases.length === 0 && <p className="empty-state">{t("noCases")}</p>}
+                  {irccCases.map((item) => (
+                    <div key={`ircc-${item.id}`} className={`case-row ${selectedIrccCaseId === item.id ? "selected" : ""}`} onClick={() => { setSelectedCaseId(null); setSelectedIrccCaseId(item.id); }}>
+                      <div className="case-info">
+                        <div className="case-name">{item.displayName}</div>
+                        <div className="case-meta">{t("countryCanada")} · {item.applicationNumber || item.appId}</div>
+                      </div>
+                      <span className="status-badge">{item.lastSnapshotHash ? t("success") : t("waitFirstQuery")}</span>
+                    </div>
+                  ))}
+                  {cases.length === 0 && irccCases.length === 0 && <p className="empty-state">{t("noCases")}</p>}
                 </div>
               </section>
               <SupportPanel t={t} />
@@ -1844,7 +2265,20 @@ export function App() {
             </div>
 
             <div className="stack">
-              {selectedCaseId === null ? (
+              {selectedIrccCase ? (
+                <IrccCaseDetail
+                  targetCase={selectedIrccCase}
+                  history={irccHistory}
+                  runQuery={runIrccTest}
+                  sendTestEmail={sendIrccTestEmail}
+                  removeCase={removeIrccCase}
+                  toggleEmailPush={toggleIrccEmailPush}
+                  stopAutomaticQuery={stopIrccAutomaticQuery}
+                  isBusy={isBusy}
+                  t={t}
+                  languageMode={languageMode}
+                />
+              ) : selectedCaseId === null ? (
                 <section className="panel">
                   <div className="panel-title">
                     <div>
@@ -1852,7 +2286,21 @@ export function App() {
                       <p className="form-intro">{t("officialIntro")}</p>
                     </div>
                   </div>
-                  <CaseFormView caseForm={caseForm} setCaseForm={setCaseForm} saveCase={saveCase} isBusy={isBusy} t={t} languageMode={languageMode} />
+                  <NewProfileForm
+                    country={newProfileCountry}
+                    setCountry={setNewProfileCountry}
+                    caseForm={caseForm}
+                    setCaseForm={setCaseForm}
+                    saveCase={saveCase}
+                    irccCaseForm={irccCaseForm}
+                    setIrccCaseForm={setIrccCaseForm}
+                    saveIrccCase={saveIrccCase}
+                    discoverIrccApplications={discoverIrccApplications}
+                    irccApplications={irccApplications}
+                    isBusy={isBusy}
+                    t={t}
+                    languageMode={languageMode}
+                  />
                 </section>
               ) : selectedCase ? (
                 <>
@@ -2038,6 +2486,189 @@ function PublicNoticePanel(props: { t: (key: TranslationKey) => string }) {
         <p className="support-disclaimer">{props.t("publicNoticeDisclaimer")}</p>
       </div>
     </section>
+  );
+}
+
+function readIrccStatus(status: unknown): string {
+  if (typeof status === "string") {
+    return status || "-";
+  }
+  if (status && typeof status === "object" && "status" in status) {
+    const value = String((status as { status?: unknown }).status ?? "");
+    const timeStamp = String((status as { timeStamp?: unknown }).timeStamp ?? "");
+    return `${value || "-"}${timeStamp ? ` · ${timeStamp}` : ""}`;
+  }
+  return status == null || status === "" ? "-" : JSON.stringify(status);
+}
+
+function getIrccApplicant(snapshot: IrccSnapshot | null): Record<string, unknown> {
+  const appStatus = snapshot?.appStatus;
+  const list = appStatus?.listOfApplicants;
+  return Array.isArray(list) && list[0] && typeof list[0] === "object" ? list[0] as Record<string, unknown> : {};
+}
+
+function IrccCaseDetail(props: {
+  targetCase: IrccCase;
+  history: IrccHistoryItem[];
+  runQuery: (caseId: number) => Promise<void>;
+  sendTestEmail: (caseId: number) => Promise<void>;
+  removeCase: (caseId: number) => Promise<void>;
+  toggleEmailPush: (targetCase: IrccCase) => Promise<void>;
+  stopAutomaticQuery: (targetCase: IrccCase) => Promise<void>;
+  isBusy: boolean;
+  t: (key: TranslationKey) => string;
+  languageMode: LanguageMode;
+}) {
+  const snapshot = props.targetCase.latestSnapshot;
+  const appStatus = snapshot?.appStatus ?? {};
+  const applicationInfo = snapshot?.applicationInfo ?? {};
+  const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
+  const applicant = getIrccApplicant(snapshot);
+  return (
+    <>
+      <section className="panel">
+        <div className="panel-title">
+          <div>
+            <h2 className="headline">{props.targetCase.displayName}</h2>
+            <p className="form-intro compact">{props.t("countryCanada")} · {props.t("irccPortalTitle")} · {props.t("irccAlphaLabel")}</p>
+          </div>
+          <div className="row-actions">
+            <button className="button secondary" onClick={() => props.runQuery(props.targetCase.id)} disabled={props.isBusy}>
+              <Activity size={16} /> {props.t("fastQuery")}
+            </button>
+            <button className="button secondary" onClick={() => props.sendTestEmail(props.targetCase.id)} disabled={props.isBusy || props.history.length === 0}>
+              <Mail size={16} /> {props.t("irccTestEmail")}
+            </button>
+            <button className="icon-button danger" onClick={() => { if (confirm(props.t("confirmDelete"))) void props.removeCase(props.targetCase.id); }}>
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="stack" style={{ marginBottom: "24px" }}>
+          <div className="notice">{props.t("irccPortalIntro")}</div>
+          {props.targetCase.lastErrorMessage && (
+            <div className="notice">
+              <strong>{props.t("irccLastError")}：</strong>{props.targetCase.lastErrorMessage}
+            </div>
+          )}
+          <div className="two-col metric-grid">
+            <Metric label={props.t("irccApplicationNumber")} value={props.targetCase.applicationNumber || "-"} />
+            <Metric label={props.t("irccAppId")} value={props.targetCase.appId} />
+          </div>
+          <div className="two-col metric-grid">
+            <Metric label={props.t("irccPrincipalApplicant")} value={props.targetCase.principalApplicant || String(applicant.fullName || "-")} />
+            <Metric label={props.t("irccPortalEmail")} value={props.targetCase.portalEmailMasked} />
+          </div>
+          <div className="two-col metric-grid">
+            <Metric label={props.t("notifyEmail")} value={props.targetCase.receiveEmail} />
+            <Metric label={props.t("lastCheckMode")} value={formatTriggerType(props.targetCase.lastTriggerType, props.t)} />
+          </div>
+          <div className="two-col metric-grid">
+            <Metric label={props.t("lastCheckedAt")} value={formatTime(props.targetCase.lastCheckedAt, props.languageMode)} />
+            <Metric label={props.t("nextCheckAt")} value={formatTime(props.targetCase.nextCheckAt, props.languageMode)} />
+          </div>
+          <div className="settings-row">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={props.targetCase.emailNotificationsEnabled}
+                onChange={() => props.toggleEmailPush(props.targetCase)}
+                disabled={props.isBusy}
+              />
+              <span className="body-sm">{props.t("emailPushSetting")}</span>
+            </label>
+            <button className="button secondary" onClick={() => props.stopAutomaticQuery(props.targetCase)} disabled={props.isBusy || !props.targetCase.isEnabled}>
+              {props.t("stopAutomaticQuery")}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2 className="subhead">{props.t("irccApplicationStatus")}</h2>
+          <span className="status-badge">{readIrccStatus(appStatus.applicationStatus) || props.t("noStatus")}</span>
+        </div>
+        <div className="two-col metric-grid">
+          <Metric label="Review of eligibility" value={readIrccStatus(appStatus.eligibility)} />
+          <Metric label="Review of medical results" value={readIrccStatus(appStatus.medical)} />
+        </div>
+        <div className="two-col metric-grid">
+          <Metric label="Review of additional documents" value={readIrccStatus(appStatus.additionalDocuments)} />
+          <Metric label="Interview" value={readIrccStatus(appStatus.interviewOrAppointment)} />
+        </div>
+        <div className="two-col metric-grid">
+          <Metric label="Biometrics" value={readIrccStatus(appStatus.biometricInformation)} />
+          <Metric label="Background check" value={readIrccStatus(appStatus.backgroundChecks)} />
+        </div>
+        <div className="two-col metric-grid">
+          <Metric label="Final decision" value={readIrccStatus(appStatus.finalDecision)} />
+          <Metric label="Ghost update" value={String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate || "-")} />
+        </div>
+        <p className="form-intro compact">{props.t("irccGhostUpdate")}</p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2 className="subhead">{props.t("irccApplicantInfo")}</h2>
+          <UserRound size={18} />
+        </div>
+        <div className="two-col metric-grid">
+          <Metric label="Principal applicant" value={String(applicant.fullName || props.targetCase.principalApplicant || "-")} />
+          <Metric label="UCI" value={String(applicant.uci || "-")} />
+        </div>
+        <div className="two-col metric-grid">
+          <Metric label="Application number" value={String(applicant.appNumber || props.targetCase.applicationNumber || "-")} />
+          <Metric label="Date received" value={String(applicant.receivedDate || "-")} />
+        </div>
+        <div className="two-col metric-grid">
+          <Metric label="Biometrics number" value={String(applicant.biometricNumber || "-")} />
+          <Metric label="Biometrics expiry" value={String(applicant.biometricExpiryDate || "-")} />
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2 className="subhead">{props.t("irccMessages")}</h2>
+          <Mail size={18} />
+        </div>
+        <div className="timeline">
+          {messages.map((message, index) => {
+            const details = typeof message.messageDetails === "object" && message.messageDetails ? message.messageDetails as Record<string, unknown> : {};
+            const attachment = typeof details.attachment === "object" && details.attachment ? details.attachment as Record<string, unknown> : {};
+            return (
+              <div key={String(message.messageId ?? index)} className="timeline-item">
+                <div className="timeline-header">
+                  <span className="timeline-time">{formatTime(String(message.updatedDttm || message.createdDttm || ""), props.languageMode)}</span>
+                  <span className="status-badge">{String(details.messageTag || details.messageType || "Message")}</span>
+                </div>
+                <div className="timeline-desc">{String(details.subject || attachment.attachmentFileName || "-")}</div>
+              </div>
+            );
+          })}
+          {messages.length === 0 && <p className="empty-state">{props.t("irccNoHistory")}</p>}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2 className="subhead">{props.t("statusHistory")}</h2>
+          <History size={18} />
+        </div>
+        <div className="timeline">
+          {props.history.map((record) => (
+            <div key={record.id} className="timeline-item">
+              <div className="timeline-header">
+                <span className="timeline-time">{formatTime(record.fetchedAt, props.languageMode)}</span>
+                <span className="status-badge">{record.notificationSent ? props.t("emailPushOn") : props.t("noStatusChange")}</span>
+              </div>
+              <div className="timeline-desc">{record.changeSummary}</div>
+            </div>
+          ))}
+          {props.history.length === 0 && <p className="empty-state">{props.t("irccNoHistory")}</p>}
+        </div>
+      </section>
+    </>
   );
 }
 
@@ -2949,6 +3580,164 @@ function AdminPanel(props: {
         </div>
       </section>
     </div>
+  );
+}
+
+function NewProfileForm(props: {
+  country: ProfileCountry;
+  setCountry: (country: ProfileCountry) => void;
+  caseForm: CaseForm;
+  setCaseForm: React.Dispatch<React.SetStateAction<CaseForm>>;
+  saveCase: (e: FormEvent<HTMLFormElement>) => Promise<void>;
+  irccCaseForm: IrccCaseForm;
+  setIrccCaseForm: React.Dispatch<React.SetStateAction<IrccCaseForm>>;
+  saveIrccCase: (e: FormEvent<HTMLFormElement>) => Promise<void>;
+  discoverIrccApplications: (e?: FormEvent<HTMLFormElement>) => Promise<void>;
+  irccApplications: IrccDiscoveredApplication[];
+  isBusy: boolean;
+  t: (key: TranslationKey) => string;
+  languageMode: LanguageMode;
+}) {
+  return (
+    <div className="stack">
+      <label>
+        {props.t("country")}
+        <div className="segmented">
+          <button type="button" className={props.country === "us" ? "selected" : ""} onClick={() => props.setCountry("us")}>{props.t("countryUnitedStates")}</button>
+          <button type="button" className={props.country === "ca" ? "selected" : ""} onClick={() => props.setCountry("ca")}>{props.t("countryCanada")}</button>
+        </div>
+      </label>
+      {props.country === "us" ? (
+        <CaseFormView caseForm={props.caseForm} setCaseForm={props.setCaseForm} saveCase={props.saveCase} isBusy={props.isBusy} t={props.t} languageMode={props.languageMode} />
+      ) : (
+        <IrccCaseFormView
+          form={props.irccCaseForm}
+          setForm={props.setIrccCaseForm}
+          saveCase={props.saveIrccCase}
+          discoverApplications={props.discoverIrccApplications}
+          applications={props.irccApplications}
+          isBusy={props.isBusy}
+          t={props.t}
+        />
+      )}
+    </div>
+  );
+}
+
+function IrccCaseFormView(props: {
+  form: IrccCaseForm;
+  setForm: React.Dispatch<React.SetStateAction<IrccCaseForm>>;
+  saveCase: (e: FormEvent<HTMLFormElement>) => Promise<void>;
+  discoverApplications: (e?: FormEvent<HTMLFormElement>) => Promise<void>;
+  applications: IrccDiscoveredApplication[];
+  isBusy: boolean;
+  t: (key: TranslationKey) => string;
+}) {
+  const form = props.form;
+  const setForm = props.setForm;
+  return (
+    <form className="stack" onSubmit={props.saveCase}>
+      <div className="official-form-note alpha-note">
+        <strong>{props.t("irccPortalTitle")}</strong>
+        <span>{props.t("irccAlphaLabel")}</span>
+      </div>
+      <p className="section-help">{props.t("irccPortalIntro")}</p>
+      <div className="form-section">
+        <label>
+          {props.t("caseName")}
+          <input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} required placeholder="例如：加拿大 TRV" />
+        </label>
+        <div className="two-col">
+          <label>
+            {props.t("irccPortalEmail")}
+            <input value={form.portalEmail} onChange={(e) => setForm({ ...form, portalEmail: e.target.value.trim() })} type="email" required />
+          </label>
+          <label>
+            {props.t("irccPortalPassword")}
+            <input value={form.portalPassword} onChange={(e) => setForm({ ...form, portalPassword: e.target.value })} type="password" required />
+          </label>
+        </div>
+        <button type="button" className="button secondary" onClick={() => props.discoverApplications()} disabled={props.isBusy || !form.portalEmail || !form.portalPassword}>
+          <Activity size={16} /> {props.t("irccDiscoverApplications")}
+        </button>
+        {props.applications.length > 0 && (
+          <label>
+            {props.t("irccApplicationSelect")}
+            <select
+              className="select-input"
+              value={form.appId}
+              onChange={(event) => {
+                const selected = props.applications.find((item) => item.appId === event.target.value);
+                if (!selected) {
+                  return;
+                }
+                setForm({
+                  ...form,
+                  appId: selected.appId,
+                  applicationNumber: selected.applicationNumber,
+                  principalApplicant: selected.principalApplicant,
+                  displayName: form.displayName || `IRCC ${selected.applicationNumber || selected.appId}`,
+                });
+              }}
+            >
+              {props.applications.map((application) => (
+                <option key={application.appId} value={application.appId}>
+                  {application.applicationNumber || application.appId} · {application.principalApplicant || application.status}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className="two-col">
+          <label>
+            {props.t("irccAppId")}
+            <input value={form.appId} onChange={(e) => setForm({ ...form, appId: e.target.value.trim() })} required placeholder="15269630" />
+          </label>
+          <label>
+            {props.t("irccApplicationNumber")}
+            <input value={form.applicationNumber} onChange={(e) => setForm({ ...form, applicationNumber: e.target.value.trim().toUpperCase() })} placeholder="V404954791" />
+          </label>
+        </div>
+        <label>
+          {props.t("irccPrincipalApplicant")}
+          <input value={form.principalApplicant} onChange={(e) => setForm({ ...form, principalApplicant: e.target.value })} placeholder="CHENGBO ZHUANG" />
+        </label>
+      </div>
+      <div className="form-section">
+        <p className="section-help">{props.t("deliverySection")}</p>
+        <label>
+          {props.t("deliveryEmail")}
+          <input value={form.receiveEmail} onChange={(e) => setForm({ ...form, receiveEmail: e.target.value.trim() })} type="email" required={form.emailNotificationsEnabled} />
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={form.isEnabled} onChange={(e) => setForm({ ...form, isEnabled: e.target.checked })} />
+          <span className="body-sm">{props.t("autoMonitor")}</span>
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={form.emailNotificationsEnabled} onChange={(e) => setForm({ ...form, emailNotificationsEnabled: e.target.checked })} />
+          <span className="body-sm">{props.t("emailPushSetting")}</span>
+        </label>
+        <label>
+          {props.t("senderConfig")}
+          <div className="segmented">
+            <button type="button" className={form.senderMode === "system" ? "selected" : ""} onClick={() => setForm({ ...form, senderMode: "system" })}>{props.t("systemSender")}</button>
+            <button type="button" className={form.senderMode === "custom" ? "selected" : ""} onClick={() => setForm({ ...form, senderMode: "custom" })}>{props.t("useCustomSmtp")}</button>
+          </div>
+        </label>
+        {form.senderMode === "custom" && (
+          <div className="smtp-box">
+            <label>{props.t("smtpEmail")} <input value={form.smtpFromEmail} onChange={(e) => setForm({ ...form, smtpFromEmail: e.target.value })} type="email" required /></label>
+            <div className="two-col">
+              <label>{props.t("smtpHost")} <input value={form.smtpHost} onChange={(e) => setForm({ ...form, smtpHost: e.target.value })} required /></label>
+              <label>{props.t("smtpPort")} <input value={form.smtpPort} onChange={(e) => setForm({ ...form, smtpPort: e.target.value })} required /></label>
+            </div>
+            <label>{props.t("passwordOrCode")} <input value={form.smtpPassword} onChange={(e) => setForm({ ...form, smtpPassword: e.target.value })} type="password" required /></label>
+            <label className="checkbox"><input type="checkbox" checked={form.smtpUseSsl} onChange={(e) => setForm({ ...form, smtpUseSsl: e.target.checked })} /> <span>{props.t("useSsl")}</span></label>
+          </div>
+        )}
+      </div>
+      <button className="button primary" disabled={props.isBusy}>{props.t("irccSave")}</button>
+    </form>
   );
 }
 
