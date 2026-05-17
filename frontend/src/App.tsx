@@ -1084,11 +1084,34 @@ function getInitialLanguage(): LanguageMode {
   return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-function formatTime(value: string | null, languageMode: LanguageMode): string {
+function parsePortableTime(value: string | number): Date | null {
+  if (typeof value === "number") {
+    const timestamp = value < 1_000_000_000_000 ? value * 1000 : value;
+    const parsed = new Date(timestamp);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (/^\d+$/.test(trimmed)) {
+    return parsePortableTime(Number(trimmed));
+  }
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+  const normalized = hasTimezone ? trimmed : trimmed.replace(" ", "T") + "Z";
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatTime(value: string | number | null, languageMode: LanguageMode): string {
   if (!value) {
     return languageMode === "zh" ? "尚未记录" : "Not recorded";
   }
-  return new Date(value).toLocaleString(languageMode === "zh" ? "zh-CN" : "en-US");
+  const parsed = parsePortableTime(value);
+  if (!parsed) {
+    return String(value);
+  }
+  return parsed.toLocaleString(languageMode === "zh" ? "zh-CN" : "en-US");
 }
 
 function formatDurationSeconds(seconds: number): string {
@@ -2603,7 +2626,7 @@ function IrccCaseDetail(props: {
         </div>
         <div className="two-col metric-grid">
           <Metric label="Final decision" value={readIrccStatus(appStatus.finalDecision)} />
-          <Metric label="Ghost update" value={String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate || "-")} />
+          <Metric label="Ghost update" value={applicationInfo.updatedTimestamp || applicationInfo.updatedDate ? formatTime(String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate), props.languageMode) : "-"} />
         </div>
         <p className="form-intro compact">{props.t("irccGhostUpdate")}</p>
       </section>
@@ -3691,16 +3714,16 @@ function IrccCaseFormView(props: {
         <div className="two-col">
           <label>
             {props.t("irccAppId")}
-            <input value={form.appId} onChange={(e) => setForm({ ...form, appId: e.target.value.trim() })} required placeholder="15269630" />
+            <input value={form.appId} onChange={(e) => setForm({ ...form, appId: e.target.value.trim() })} required />
           </label>
           <label>
             {props.t("irccApplicationNumber")}
-            <input value={form.applicationNumber} onChange={(e) => setForm({ ...form, applicationNumber: e.target.value.trim().toUpperCase() })} placeholder="V404954791" />
+            <input value={form.applicationNumber} onChange={(e) => setForm({ ...form, applicationNumber: e.target.value.trim().toUpperCase() })} />
           </label>
         </div>
         <label>
           {props.t("irccPrincipalApplicant")}
-          <input value={form.principalApplicant} onChange={(e) => setForm({ ...form, principalApplicant: e.target.value })} placeholder="CHENGBO ZHUANG" />
+          <input value={form.principalApplicant} onChange={(e) => setForm({ ...form, principalApplicant: e.target.value })} />
         </label>
       </div>
       <div className="form-section">

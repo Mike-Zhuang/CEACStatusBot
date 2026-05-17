@@ -47,7 +47,7 @@ COGNITO_N_HEX = (
     "19DCEE3D2261AD2EE6BF12FFA06D98A0864D87602733EC86A6"
     "4521F2B18177B200CBBE117577A615D6C770988C0BAD946E2"
     "08E24FA074E5AB3143DB5BFCE0FD108E4B82D120A93AD2CAFF"
-    "FFFFFFFFFFFFFFFF"
+    "FFFFFFFFFFFFFF"
 )
 COGNITO_N = int(COGNITO_N_HEX, 16)
 COGNITO_G = 2
@@ -276,8 +276,10 @@ def computeHkdf(ikm: bytes, salt: bytes) -> bytes:
 
 
 def cognitoTimestamp() -> str:
-    now = datetime.utcnow()
-    return f"{now.strftime('%a %b')} {now.day} {now.strftime('%H:%M:%S UTC %Y')}"
+    now = datetime.now(UTC)
+    weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    return f"{weekDays[now.weekday()]} {months[now.month - 1]} {now.day} {now:%H:%M:%S} UTC {now.year}"
 
 
 def cognitoRequest(payload: dict[str, Any], target: str = "AWSCognitoIdentityProviderService.InitiateAuth") -> dict[str, Any]:
@@ -298,7 +300,7 @@ def cognitoRequest(payload: dict[str, Any], target: str = "AWSCognitoIdentityPro
 
 
 def loginWithSrp(portalEmail: str, portalPassword: str) -> dict[str, Any]:
-    smallA = stdlibSecrets.randbits(1024)
+    smallA = int.from_bytes(stdlibSecrets.token_bytes(128), "big")
     largeA = pow(COGNITO_G, smallA, COGNITO_N)
     if largeA % COGNITO_N == 0:
         raise IrccAuthenticationError("IRCC SRP 参数生成失败，请重试。")
@@ -326,8 +328,10 @@ def loginWithSrp(portalEmail: str, portalPassword: str) -> dict[str, Any]:
     largeB = int(srpBHex, 16)
     if largeB % COGNITO_N == 0:
         raise IrccAuthenticationError("IRCC SRP 服务端参数无效。")
-    k = hexHash(bytes.fromhex("00" + COGNITO_N_HEX + "0" + f"{COGNITO_G:x}"))
+    k = hexHash(bytes.fromhex(padHex(COGNITO_N) + padHex(COGNITO_G)))
     uValue = hexHash(bytes.fromhex(padHex(largeA) + padHex(largeB)))
+    if uValue == 0:
+        raise IrccAuthenticationError("IRCC SRP 随机扰码无效，请重试。")
     userPasswordHash = hashSha256(f"{COGNITO_POOL_NAME}{userIdForSrp}:{portalPassword}")
     xValue = hexHash(bytes.fromhex(padHex(salt)) + userPasswordHash)
     sValue = pow((largeB - k * pow(COGNITO_G, xValue, COGNITO_N)) % COGNITO_N, smallA + uValue * xValue, COGNITO_N)
@@ -339,6 +343,7 @@ def loginWithSrp(portalEmail: str, portalPassword: str) -> dict[str, Any]:
         {
             "ChallengeName": "PASSWORD_VERIFIER",
             "ClientId": COGNITO_CLIENT_ID,
+            "Session": auth.get("Session"),
             "ChallengeResponses": {
                 "USERNAME": userIdForSrp,
                 "PASSWORD_CLAIM_SECRET_BLOCK": secretBlock,
