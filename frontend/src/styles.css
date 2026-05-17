@@ -869,6 +869,26 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+.case-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.case-order-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.button.compact {
+  min-height: 30px;
+  width: 30px;
+  padding: 0;
+}
+
 /* Badges */
 .status-badge {
   display: inline-flex;
@@ -1755,6 +1775,11 @@ select:focus {
     align-items: start;
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .case-row-actions {
+    justify-content: space-between;
+    width: 100%;
   }
 
   .status-badge {

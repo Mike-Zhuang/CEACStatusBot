@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from .case_service import PREMIUM_CASE_LIMIT, STANDARD_CASE_LIMIT, upsertSmtpConfig
+from .case_service import PREMIUM_CASE_LIMIT, STANDARD_CASE_LIMIT, nextProfileSortOrder, upsertSmtpConfig
 from .database import getConnection, utcNowIso
 from .mailer import (
     buildEmailHtml,
@@ -684,6 +684,7 @@ def normalizeIrccCaseRow(row: dict[str, Any]) -> dict[str, Any]:
         "senderMode": row["sender_mode"],
         "isEnabled": bool(row["is_enabled"]),
         "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
+        "sortOrder": int(row.get("sort_order") or 0),
         "nextCheckAt": row["next_check_at"],
         "lastCheckedAt": row["last_checked_at"],
         "lastTriggerType": row.get("last_trigger_type"),
@@ -716,7 +717,7 @@ def listIrccCases(userId: int | None = None) -> list[dict[str, Any]]:
             FROM ircc_cases c
             JOIN ircc_portal_accounts a ON a.id = c.account_id
             {where}
-            ORDER BY c.updated_at DESC
+            ORDER BY c.sort_order ASC, c.updated_at DESC, c.id DESC
             """,
             params,
         ).fetchall()
@@ -778,9 +779,9 @@ def createIrccCase(userId: int, payload: IrccCaseInput) -> dict[str, Any]:
             INSERT INTO ircc_cases (
                 user_id, account_id, display_name, app_id, application_number, principal_applicant,
                 receive_email, sender_mode, is_enabled, email_notifications_enabled,
-                next_check_at, created_at, updated_at
+                sort_order, next_check_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 userId,
@@ -793,6 +794,7 @@ def createIrccCase(userId: int, payload: IrccCaseInput) -> dict[str, Any]:
                 payload.senderMode,
                 int(payload.isEnabled),
                 int(payload.emailNotificationsEnabled),
+                nextProfileSortOrder(connection, userId),
                 computeNextIrccCheckAt() if payload.isEnabled else None,
                 now,
                 now,

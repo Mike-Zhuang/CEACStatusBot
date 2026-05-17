@@ -13,7 +13,7 @@ from .passport_slot_service import (
     isPassportSlotTrigger,
     runPassportSlotQuery,
 )
-from .schemas import CeacCaseInput, CeacCasePatch
+from .schemas import CeacCaseInput, CeacCasePatch, ProfileOrderItem
 from .secrets import decryptIfNeeded, encryptSecret, isEncryptedSecret
 
 
@@ -106,6 +106,7 @@ def normalizeCaseRow(row: dict[str, Any]) -> dict[str, Any]:
         "ceacAutoLockedByPassportSlot": bool(row.get("ceac_auto_locked_by_passport_slot", 0)),
         "ceacConsecutiveErrorCount": int(row.get("ceac_consecutive_error_count") or 0),
         "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
+        "sortOrder": int(row.get("sort_order") or 0),
         "nextCheckAt": row["next_check_at"],
         "lastCheckedAt": row["last_checked_at"],
         "lastTriggerType": row.get("last_trigger_type"),
@@ -158,11 +159,41 @@ def listCases(userId: int | None = None) -> list[dict[str, Any]]:
             LEFT JOIN status_catalog s ON s.id = c.last_status_id
             LEFT JOIN passport_slot_monitors m ON m.case_id = c.id
             {where}
-            ORDER BY c.updated_at DESC
+            ORDER BY c.sort_order ASC, c.updated_at DESC, c.id DESC
             """,
             params,
         ).fetchall()
     return [normalizeCaseRow(row) for row in rows]
+
+
+def nextProfileSortOrder(connection: Any, userId: int) -> int:
+    rows = connection.execute(
+        """
+        SELECT MIN(sort_order) AS min_sort_order FROM ceac_cases WHERE user_id = ?
+        UNION ALL
+        SELECT MIN(sort_order) AS min_sort_order FROM ircc_cases WHERE user_id = ?
+        """,
+        (userId, userId),
+    ).fetchall()
+    values = [int(row["min_sort_order"]) for row in rows if row["min_sort_order"] is not None]
+    return (min(values) if values else 0) - 100
+
+
+def reorderProfiles(userId: int, profiles: list[ProfileOrderItem]) -> None:
+    with getConnection() as connection:
+        ceacRows = connection.execute("SELECT id FROM ceac_cases WHERE user_id = ?", (userId,)).fetchall()
+        irccRows = connection.execute("SELECT id FROM ircc_cases WHERE user_id = ?", (userId,)).fetchall()
+        ownedKeys = {("ceac", int(row["id"])) for row in ceacRows}
+        ownedKeys.update({("ircc", int(row["id"])) for row in irccRows})
+        requestedKeys = [(profile.profileType, int(profile.id)) for profile in profiles]
+        if set(requestedKeys) != ownedKeys:
+            raise ValueError("档案排序列表已过期，请刷新后重试。")
+        for index, (profileType, profileId) in enumerate(requestedKeys):
+            table = "ceac_cases" if profileType == "ceac" else "ircc_cases"
+            connection.execute(
+                f"UPDATE {table} SET sort_order = ? WHERE id = ? AND user_id = ?",
+                (index * 100, profileId, userId),
+            )
 
 
 def getCase(caseId: int, userId: int | None = None) -> dict[str, Any] | None:
@@ -253,9 +284,9 @@ def createCase(userId: int, payload: CeacCaseInput) -> dict[str, Any]:
             INSERT INTO ceac_cases (
                 user_id, display_name, location, application_num, passport_number, surname,
                 receive_email, sender_mode, is_enabled, email_notifications_enabled,
-                next_check_at, created_at, updated_at
+                sort_order, next_check_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 userId,
@@ -268,6 +299,7 @@ def createCase(userId: int, payload: CeacCaseInput) -> dict[str, Any]:
                 payload.senderMode,
                 int(payload.isEnabled),
                 int(payload.emailNotificationsEnabled),
+                nextProfileSortOrder(connection, userId),
                 computeNextCheckAt() if payload.isEnabled else None,
                 now,
                 now,

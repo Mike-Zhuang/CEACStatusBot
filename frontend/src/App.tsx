@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -39,6 +41,7 @@ interface User {
 interface CeacCase {
   id: number;
   userId: number;
+  sortOrder: number;
   displayName: string;
   location: string;
   applicationNum: string;
@@ -75,6 +78,7 @@ interface CeacCase {
 interface IrccCase {
   id: number;
   userId: number;
+  sortOrder: number;
   displayName: string;
   portalEmailMasked: string;
   appId: string;
@@ -100,6 +104,10 @@ interface IrccSnapshot {
   appStatus?: Record<string, unknown>;
   messages?: Array<Record<string, unknown>>;
 }
+
+type ProfileListItem =
+  | { profileType: "ceac"; id: number; sortOrder: number; updatedAt: string; case: CeacCase }
+  | { profileType: "ircc"; id: number; sortOrder: number; updatedAt: string; case: IrccCase };
 
 interface IrccHistoryItem {
   id: number;
@@ -610,6 +618,10 @@ const translations = {
     noLogs: "No logs yet",
     noStatus: "Not ready",
     noStatusChange: "No status change",
+    moveProfileUp: "Move up",
+    moveProfileDown: "Move down",
+    profileOrderSaved: "Profile order saved.",
+    profileOrderFailed: "Failed to save profile order.",
     issuedSlowQueryNotice: "This profile is Issued. Automatic checks are now daily and will stop automatically after one week if you do not stop them here.",
     stopAutomaticQuery: "Stop automatic checks",
     automaticQueryStopped: "Automatic checks stopped. You can still query manually.",
@@ -842,6 +854,10 @@ const translations = {
     noLogs: "暂无日志",
     noStatus: "未就绪",
     noStatusChange: "未发生状态变更",
+    moveProfileUp: "上移档案",
+    moveProfileDown: "下移档案",
+    profileOrderSaved: "档案顺序已保存。",
+    profileOrderFailed: "档案顺序保存失败。",
     issuedSlowQueryNotice: "此档案已进入 Issued，自动查询已降频为每天一次；如果你一周内未手动停止，系统将自动停止并邮件通知你。",
     stopAutomaticQuery: "停止自动查询",
     automaticQueryStopped: "已停止自动查询，你仍然可以手动立即查询。",
@@ -1230,6 +1246,9 @@ export function App() {
   const [selectedCaseId, setSelectedCaseId] = useState<number | null>(null);
   const [selectedIrccCaseId, setSelectedIrccCaseId] = useState<number | null>(null);
   const [newProfileCountry, setNewProfileCountry] = useState<ProfileCountry>("us");
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const [casesLoaded, setCasesLoaded] = useState(false);
+  const [irccCasesLoaded, setIrccCasesLoaded] = useState(false);
   const [caseForm, setCaseForm] = useState<CaseForm>(emptyCaseForm);
   const [irccCaseForm, setIrccCaseForm] = useState<IrccCaseForm>(emptyIrccCaseForm);
   const [irccApplications, setIrccApplications] = useState<IrccDiscoveredApplication[]>([]);
@@ -1288,6 +1307,9 @@ export function App() {
       setUser(null);
       setCases([]);
       setIrccCases([]);
+      setCasesLoaded(false);
+      setIrccCasesLoaded(false);
+      setIsCreatingProfile(false);
       setHistory([]);
       setIrccHistory([]);
       showMessage(detail || (languageMode === "zh" ? "登录已超时，请重新登录。" : "Session expired. Please sign in again."), "auth");
@@ -1295,6 +1317,55 @@ export function App() {
     window.addEventListener("ceac-session-expired", handleSessionExpired);
     return () => window.removeEventListener("ceac-session-expired", handleSessionExpired);
   }, [languageMode]);
+
+  const orderedProfiles = useMemo<ProfileListItem[]>(() => {
+    return [
+      ...cases.map((item) => ({
+        profileType: "ceac" as const,
+        id: item.id,
+        sortOrder: item.sortOrder ?? 0,
+        updatedAt: item.updatedAt,
+        case: item,
+      })),
+      ...irccCases.map((item) => ({
+        profileType: "ircc" as const,
+        id: item.id,
+        sortOrder: item.sortOrder ?? 0,
+        updatedAt: item.updatedAt,
+        case: item,
+      })),
+    ].sort((left, right) => {
+      if (left.sortOrder !== right.sortOrder) {
+        return left.sortOrder - right.sortOrder;
+      }
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    });
+  }, [cases, irccCases]);
+
+  useEffect(() => {
+    if (!casesLoaded || !irccCasesLoaded || isCreatingProfile) {
+      return;
+    }
+    const currentSelectionExists = selectedIrccCaseId !== null
+      ? irccCases.some((item) => item.id === selectedIrccCaseId)
+      : selectedCaseId !== null && cases.some((item) => item.id === selectedCaseId);
+    if (currentSelectionExists) {
+      return;
+    }
+    const firstProfile = orderedProfiles[0];
+    if (!firstProfile) {
+      setSelectedCaseId(null);
+      setSelectedIrccCaseId(null);
+      return;
+    }
+    if (firstProfile.profileType === "ceac") {
+      setSelectedCaseId(firstProfile.id);
+      setSelectedIrccCaseId(null);
+    } else {
+      setSelectedCaseId(null);
+      setSelectedIrccCaseId(firstProfile.id);
+    }
+  }, [cases, casesLoaded, irccCases, irccCasesLoaded, isCreatingProfile, orderedProfiles, selectedCaseId, selectedIrccCaseId]);
 
   const selectedCase = useMemo(
     () => selectedIrccCaseId === null && selectedCaseId !== null ? cases.find((item) => item.id === selectedCaseId) ?? null : null,
@@ -1328,14 +1399,13 @@ export function App() {
   async function loadCases() {
     const payload = await requestJson<{ cases: CeacCase[] }>("/api/cases");
     setCases(payload.cases);
-    if (payload.cases.length > 0 && selectedIrccCaseId === null) {
-      setSelectedCaseId((current) => current ?? payload.cases[0].id);
-    }
+    setCasesLoaded(true);
   }
 
   async function loadIrccCases() {
     const payload = await requestJson<{ cases: IrccCase[] }>("/api/ircc/cases");
     setIrccCases(payload.cases);
+    setIrccCasesLoaded(true);
   }
 
   async function loadHistory(caseId: number) {
@@ -1489,7 +1559,11 @@ export function App() {
       setAcceptedTerms(false);
       setProfileForm({ email: payload.user.email, currentPassword: "", newPassword: "", confirmPassword: "" });
       setCaseForm((current) => current.receiveEmail ? current : createEmptyCaseForm(payload.user.email));
-      await loadCases();
+      setIrccCaseForm((current) => current.receiveEmail ? current : createEmptyIrccCaseForm(payload.user.email));
+      setIsCreatingProfile(false);
+      setCasesLoaded(false);
+      setIrccCasesLoaded(false);
+      await Promise.all([loadCases(), loadIrccCases()]);
     } catch (error) {
       showMessage(error instanceof Error ? error.message : t("signInFailed"));
     } finally {
@@ -1518,7 +1592,12 @@ export function App() {
     await requestJson<{ ok: boolean }>("/api/auth/logout", { method: "POST", body: "{}" });
     setUser(null);
     setCases([]);
+    setIrccCases([]);
+    setCasesLoaded(false);
+    setIrccCasesLoaded(false);
+    setIsCreatingProfile(false);
     setHistory([]);
+    setIrccHistory([]);
   }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
@@ -1591,6 +1670,7 @@ export function App() {
       setCaseForm(createEmptyCaseForm(user?.email ?? ""));
       setSelectedCaseId(result.case.id);
       setSelectedIrccCaseId(null);
+      setIsCreatingProfile(false);
       await loadCases();
       if (result.initialQueryJob) {
         const job = await waitForQueryJob(result.initialQueryJob.jobId, (status) => {
@@ -1690,6 +1770,7 @@ export function App() {
       setIrccApplications([]);
       setSelectedCaseId(null);
       setSelectedIrccCaseId(result.case.id);
+      setIsCreatingProfile(false);
       await loadIrccCases();
       if (result.initialQueryJob) {
         const job = await waitForIrccQueryJob(result.initialQueryJob.jobId, (status) => {
@@ -2069,6 +2150,32 @@ export function App() {
     }
   }
 
+  async function moveProfile(profileType: "ceac" | "ircc", profileId: number, direction: "up" | "down") {
+    const currentIndex = orderedProfiles.findIndex((item) => item.profileType === profileType && item.id === profileId);
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= orderedProfiles.length) {
+      return;
+    }
+    const nextProfiles = [...orderedProfiles];
+    [nextProfiles[currentIndex], nextProfiles[targetIndex]] = [nextProfiles[targetIndex], nextProfiles[currentIndex]];
+    setIsBusy(true);
+    showMessage("");
+    try {
+      await requestJson<{ ok: boolean }>("/api/profiles/order", {
+        method: "PATCH",
+        body: JSON.stringify({
+          profiles: nextProfiles.map((item) => ({ profileType: item.profileType, id: item.id })),
+        }),
+      });
+      await Promise.all([loadCases(), loadIrccCases()]);
+      showMessage(t("profileOrderSaved"));
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t("profileOrderFailed"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function removeCase(caseId: number) {
     await requestJson<{ ok: boolean }>(`/api/cases/${caseId}`, { method: "DELETE", body: "{}" });
     setSelectedCaseId(null);
@@ -2270,30 +2377,77 @@ export function App() {
               <section className="panel">
                 <div className="panel-title">
                   <h2 className="headline">{t("caseList")}</h2>
-                  <button className="button secondary" title={t("caseName")} onClick={() => { setSelectedCaseId(null); setSelectedIrccCaseId(null); setCaseForm(createEmptyCaseForm(user.email)); setIrccCaseForm(createEmptyIrccCaseForm(user.email)); }}>
+                  <button className="button secondary" title={t("caseName")} onClick={() => { setIsCreatingProfile(true); setSelectedCaseId(null); setSelectedIrccCaseId(null); setCaseForm(createEmptyCaseForm(user.email)); setIrccCaseForm(createEmptyIrccCaseForm(user.email)); }}>
                     <Plus size={16} /> {t("newProfile")}
                   </button>
                 </div>
                 <div className="case-list">
-                  {cases.map((item) => (
-                    <div key={`ceac-${item.id}`} className={`case-row ${selectedCaseId === item.id && selectedIrccCaseId === null ? "selected" : ""}`} onClick={() => { setSelectedIrccCaseId(null); setSelectedCaseId(item.id); }}>
-                      <div className="case-info">
-                        <div className="case-name">{item.displayName}</div>
-                        <div className="case-meta">{t("countryUnitedStates")} · {item.applicationNum || t("missingCaseNumber")}</div>
+                  {orderedProfiles.map((profile, index) => {
+                    const item = profile.case;
+                    const isCeac = profile.profileType === "ceac";
+                    const isSelected = isCeac
+                      ? selectedCaseId === item.id && selectedIrccCaseId === null
+                      : selectedIrccCaseId === item.id;
+                    const statusNode = profile.profileType === "ceac"
+                      ? <span className={getStatusBadgeClass(profile.case.lastStatus)}>{profile.case.lastStatus ?? t("waitFirstQuery")}</span>
+                      : <span className="status-badge">{profile.case.lastSnapshotHash ? t("success") : t("waitFirstQuery")}</span>;
+                    const caseMeta = profile.profileType === "ceac"
+                      ? `${t("countryUnitedStates")} · ${profile.case.applicationNum || t("missingCaseNumber")}`
+                      : `${t("countryCanada")} · ${profile.case.applicationNumber || profile.case.appId}`;
+                    return (
+                      <div
+                        key={`${profile.profileType}-${item.id}`}
+                        className={`case-row ${isSelected ? "selected" : ""}`}
+                        onClick={() => {
+                          setIsCreatingProfile(false);
+                          if (isCeac) {
+                            setSelectedIrccCaseId(null);
+                            setSelectedCaseId(item.id);
+                          } else {
+                            setSelectedCaseId(null);
+                            setSelectedIrccCaseId(item.id);
+                          }
+                        }}
+                      >
+                        <div className="case-info">
+                          <div className="case-name">{item.displayName}</div>
+                          <div className="case-meta">{caseMeta}</div>
+                        </div>
+                        <div className="case-row-actions">
+                          {statusNode}
+                          <div className="case-order-buttons" aria-label={languageMode === "zh" ? "调整档案顺序" : "Reorder profiles"}>
+                            <button
+                              type="button"
+                              className="button tertiary icon-only compact"
+                              title={t("moveProfileUp")}
+                              aria-label={t("moveProfileUp")}
+                              disabled={isBusy || index === 0}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void moveProfile(profile.profileType, item.id, "up");
+                              }}
+                            >
+                              <ArrowUp size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="button tertiary icon-only compact"
+                              title={t("moveProfileDown")}
+                              aria-label={t("moveProfileDown")}
+                              disabled={isBusy || index === orderedProfiles.length - 1}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void moveProfile(profile.profileType, item.id, "down");
+                              }}
+                            >
+                              <ArrowDown size={14} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? t("waitFirstQuery")}</span>
-                    </div>
-                  ))}
-                  {irccCases.map((item) => (
-                    <div key={`ircc-${item.id}`} className={`case-row ${selectedIrccCaseId === item.id ? "selected" : ""}`} onClick={() => { setSelectedCaseId(null); setSelectedIrccCaseId(item.id); }}>
-                      <div className="case-info">
-                        <div className="case-name">{item.displayName}</div>
-                        <div className="case-meta">{t("countryCanada")} · {item.applicationNumber || item.appId}</div>
-                      </div>
-                      <span className="status-badge">{item.lastSnapshotHash ? t("success") : t("waitFirstQuery")}</span>
-                    </div>
-                  ))}
-                  {cases.length === 0 && irccCases.length === 0 && <p className="empty-state">{t("noCases")}</p>}
+                    );
+                  })}
+                  {orderedProfiles.length === 0 && <p className="empty-state">{t("noCases")}</p>}
                 </div>
               </section>
               <SupportPanel t={t} />

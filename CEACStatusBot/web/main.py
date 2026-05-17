@@ -20,6 +20,7 @@ from .case_service import (
     listHistory,
     migrateEncryptedFields,
     patchCase,
+    reorderProfiles,
     restoreCaseAutomaticQuery,
     sendCurrentStatusEmail,
     updateUserAccountTier,
@@ -62,6 +63,7 @@ from .schemas import (
     PasswordResetRequest,
     PassportSlotMonitorInput,
     PassportSlotMonitorPatch,
+    ProfileOrderPatch,
     ProfileUpdateRequest,
     RegisterRequest,
     SendCodeRequest,
@@ -777,6 +779,15 @@ def apiPatchCase(caseId: int, payload: CeacCasePatch, user: dict = Depends(curre
 def apiDeleteCase(caseId: int, user: dict = Depends(currentUserDependency)) -> dict:
     if not deleteCase(caseId, int(user["id"])):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="签证档案不存在")
+    return {"ok": True}
+
+
+@app.patch("/api/profiles/order")
+def apiReorderProfiles(payload: ProfileOrderPatch, user: dict = Depends(currentUserDependency)) -> dict:
+    try:
+        reorderProfiles(int(user["id"]), payload.profiles)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return {"ok": True}
 
 

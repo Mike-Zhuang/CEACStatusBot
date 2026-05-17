@@ -146,6 +146,7 @@ def initializeDatabase() -> None:
                 ceac_error_notice_sent_at TEXT,
                 ceac_failure_slow_started_at TEXT,
                 email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
                 next_check_at TEXT,
                 last_checked_at TEXT,
                 last_trigger_type TEXT,
@@ -265,6 +266,7 @@ def initializeDatabase() -> None:
                 sender_mode TEXT NOT NULL DEFAULT 'system',
                 is_enabled INTEGER NOT NULL DEFAULT 1,
                 email_notifications_enabled INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
                 next_check_at TEXT,
                 last_checked_at TEXT,
                 last_trigger_type TEXT,
@@ -392,6 +394,10 @@ def initializeDatabase() -> None:
             connection.execute(
                 "ALTER TABLE ceac_cases ADD COLUMN email_notifications_enabled INTEGER NOT NULL DEFAULT 1",
             )
+        if "sort_order" not in columns:
+            connection.execute(
+                "ALTER TABLE ceac_cases ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            )
         if "ceac_auto_locked_by_passport_slot" not in columns:
             connection.execute(
                 "ALTER TABLE ceac_cases ADD COLUMN ceac_auto_locked_by_passport_slot INTEGER NOT NULL DEFAULT 0",
@@ -412,6 +418,20 @@ def initializeDatabase() -> None:
             connection.execute(
                 "ALTER TABLE ceac_cases ADD COLUMN last_trigger_type TEXT",
             )
+        irccColumns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(ircc_cases)").fetchall()
+        }
+        if "sort_order" not in irccColumns:
+            connection.execute(
+                "ALTER TABLE ircc_cases ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ceac_cases_user_sort ON ceac_cases(user_id, sort_order, updated_at)",
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ircc_cases_user_sort ON ircc_cases(user_id, sort_order, updated_at)",
+        )
         queryRunColumns = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(query_runs)").fetchall()

@@ -1,7 +1,7 @@
 import ipaddress
 import re
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 TEXT_PATTERN = re.compile(r"^[\w\s.,'\`\-:/#()@+|]+$", re.UNICODE)
@@ -273,6 +273,25 @@ class IrccCasePatch(SecureModel):
     @classmethod
     def validateOptionalText(cls, value: str | None) -> str | None:
         return IrccApplicationSelection.validateOptionalText(value)
+
+
+class ProfileOrderItem(SecureModel):
+    profileType: str = Field(pattern="^(ceac|ircc)$")
+    id: int = Field(ge=1)
+
+
+class ProfileOrderPatch(SecureModel):
+    profiles: list[ProfileOrderItem] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def validateUniqueProfiles(self) -> "ProfileOrderPatch":
+        seen: set[tuple[str, int]] = set()
+        for profile in self.profiles:
+            key = (profile.profileType, profile.id)
+            if key in seen:
+                raise ValueError("档案排序列表包含重复档案")
+            seen.add(key)
+        return self
 
 
 class PassportSlotMonitorInput(SecureModel):
