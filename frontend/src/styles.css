@@ -930,6 +930,24 @@ select:focus {
   align-items: start;
 }
 
+.ircc-detail-stack {
+  display: grid;
+  gap: 24px;
+}
+
+.ircc-metric-grid {
+  gap: 18px 24px;
+  padding: 2px 0;
+}
+
+.ircc-metric-grid + .ircc-metric-grid {
+  margin-top: 12px;
+}
+
+.ircc-section {
+  margin-top: 4px;
+}
+
 .action-notice {
   display: flex;
   align-items: center;
@@ -1573,6 +1591,17 @@ select:focus {
     display: grid;
     grid-template-columns: 1fr;
     gap: 0;
+  }
+
+  .ircc-detail-stack {
+    gap: 18px;
+  }
+
+  .ircc-metric-grid,
+  .ircc-metric-grid + .ircc-metric-grid {
+    gap: 0;
+    margin-top: 0;
+    padding: 0;
   }
 
   .metric {

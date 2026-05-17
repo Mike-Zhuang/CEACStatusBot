@@ -2525,39 +2525,122 @@ function PublicNoticePanel(props: { t: (key: TranslationKey) => string }) {
   );
 }
 
+// Code mappings are extracted from the IRCC Portal frontend bundle in the HAR.
+// IRCC may change these private frontend keys, so unknown codes are still shown raw.
 const irccStatusCodeMap: Record<string, { zh: string; en: string }> = {
-  A11: { zh: "我们正在处理你的申请。若有更新或需要更多信息，IRCC 会发送消息。", en: "IRCC is processing your application and will send a message if there is an update or more information is needed." },
+  A0: { zh: "", en: "" },
+  A1: { zh: "IRCC 已收到你的申请。若有更新或需要更多信息，IRCC 会发送消息。", en: "We received your application. We will send you a message when there is an update or if we need more information from you." },
+  A2: { zh: "已作出最终决定。请查看下方最终决定。", en: "A final decision has been made. Please see the final decision below." },
+  A3: { zh: "你的申请已取消。", en: "Your application was cancelled." },
+  A4: { zh: "申请处于暂停状态。", en: "On Hold" },
+  A5: { zh: "档案不符合资格。", en: "Profile Ineligible" },
+  A6: { zh: "档案已过期。", en: "Profile Expired" },
+  A7: { zh: "已收到邀请。", en: "Invitation Received" },
+  A8: { zh: "资料不完整。", en: "Incomplete" },
+  A9: { zh: "因资料不完整而取消。", en: "Cancelled As Incomplete" },
+  A10: { zh: "等待额外条件。", en: "Pending Additional Criteria" },
+  A11: { zh: "我们正在处理你的申请。若有更新或需要更多信息，IRCC 会发送消息。", en: "We are processing your application. We will send you a message when there is an update or if we need more information from you." },
+  A12: { zh: "你的申请已撤回。", en: "Your application was withdrawn." },
+  A13: { zh: "你的申请已被视为放弃。请查看下方最终决定。", en: "Your application was abandoned. See the final decision below." },
+  A14: { zh: "你的申请有延迟。请查看下方消息了解详情。", en: "There is a delay with your application. Check your messages below for details." },
+  A16: { zh: "你的申请有延迟。IRCC 会通过信件或邮件发送详情。", en: "There is a delay with your application. We will send you a letter or email with details." },
+  A17: { zh: "你的申请有延迟。", en: "There is a delay with your application." },
+  A18: { zh: "你的申请已完成。", en: "Your application was completed." },
+  A19: { zh: "IRCC 正在处理你的申请。若有更新、预约已安排或需要更多信息，IRCC 会发送消息。", en: "We are processing your application. We will send you a message when there is an update, an appointment has been scheduled or if we need more information from you." },
+  A20: { zh: "你的难民申请已暂停。请查看下方消息。", en: "Your refugee claim has been suspended. Please check your messages below." },
+  A21: { zh: "你的难民申请已有资格决定。该决定将会或已经发送给你。", en: "An eligibility decision has been made on your refugee claim. The decision will be or has been communicated to you." },
   SUBMITTED: { zh: "已提交", en: "Submitted" },
   IN_PROGRESS: { zh: "进行中", en: "In progress" },
+  E0: { zh: "不适用。", en: "Not applicable." },
   E1: { zh: "申请正在处理中。IRCC 会在开始审查资格时发送消息。", en: "Your application is in progress. IRCC will message you when eligibility review starts." },
   E2: { zh: "IRCC 正在审查你是否符合资格要求。", en: "IRCC is reviewing whether you meet the eligibility requirements." },
   E3: { zh: "资格审查已通过，请查看最终决定。", en: "Eligibility review passed. Check the final decision." },
   E4: { zh: "资格审查未通过，请查看最终决定。", en: "Eligibility review did not pass. Check the final decision." },
+  E5: { zh: "不适用。", en: "Not applicable." },
+  M0: { zh: "不适用。", en: "Not applicable." },
   M1: { zh: "不需要体检；如有变化，IRCC 会发送消息。", en: "You do not need a medical exam. IRCC will message you if this changes." },
   M2: { zh: "IRCC 已要求体检，请查看消息。", en: "IRCC has requested a medical exam. Check your messages." },
   M3: { zh: "IRCC 正在审查体检结果。", en: "IRCC is reviewing your medical results." },
   M4: { zh: "体检结果已通过。", en: "Medical results passed." },
   M5: { zh: "体检结果未通过，请查看最终决定。", en: "Medical results did not pass. Check the final decision." },
+  M6: { zh: "IRCC 未收到你所需体检的结果。请查看体检请求消息了解详情。", en: "We did not receive the results of your required medical exam. Check your medical exam request message below for details." },
+  M7: { zh: "IRCC 已要求体检。IRCC 会通过信件或邮件发送详情。", en: "We have requested a medical exam. We will send you a letter or email with details." },
+  M8: { zh: "IRCC 未收到你所需体检的结果。请查看体检请求消息了解详情。", en: "We did not receive the results of your required medical exam. Check your medical exam request message for details." },
+  AD0: { zh: "不适用。", en: "Not applicable." },
   AD1: { zh: "不需要补充文件。", en: "No additional documents are needed." },
   AD2: { zh: "IRCC 需要补充文件，请查看消息。", en: "IRCC needs additional documents. Check your messages." },
   AD3: { zh: "补充文件已上传。", en: "Additional documents uploaded." },
   AD4: { zh: "补充文件已收到，正在审查。", en: "Additional documents received and under review." },
+  AD5: { zh: "IRCC 需要补充文件来处理你的申请。IRCC 会通过信件或邮件发送详情。", en: "We need additional documents to process your application. We will send you a letter or email with details." },
+  AD6: { zh: "IRCC 已收到你提供的补充文件。", en: "We have received the additional documents you provided." },
+  IA0: { zh: "不适用。", en: "Not applicable." },
   IA1: { zh: "不需要面试；如有变化，IRCC 会发送消息。", en: "You do not need an interview. IRCC will message you if this changes." },
   IA2: { zh: "需要面试，请查看消息。", en: "An interview is required. Check your messages." },
   IA3: { zh: "面试已完成。", en: "Interview completed." },
   IA4: { zh: "面试已取消，请查看消息。", en: "Interview cancelled. Check your messages." },
+  IA5: { zh: "面试已重新安排。请查看消息了解详情。", en: "Your interview was rescheduled. Check your messages for details." },
+  IA6: { zh: "你没有参加已安排的面试。请查看面试请求消息了解详情。", en: "You did not attend your scheduled interview. Check your interview request message below for details." },
+  IA7: { zh: "你需要参加面试。IRCC 会通过信件或邮件发送详情。", en: "You need to attend an interview. We will send you a letter or email with details." },
+  IA8: { zh: "你没有参加已安排的面试。IRCC 会通过信件或邮件发送详情。", en: "You did not attend your scheduled interview. We will send you a letter or email with details." },
+  IA9: { zh: "面试尚未安排；如有变化，IRCC 会发送消息。", en: "You have not yet been scheduled for an interview. We will send you a message if this changes." },
+  IA10: { zh: "你已参加预约。如需再次见面，IRCC 会通知你。", en: "You have attended an appointment. We will advise if we need to see you again." },
+  B0: { zh: "不适用。", en: "Not applicable." },
   B1: { zh: "不需要提供指纹；如有变化，IRCC 会发送消息。", en: "You do not need to give biometrics. IRCC will message you if this changes." },
   B2: { zh: "需要提供指纹，请查看消息。", en: "Biometrics are required. Check your messages." },
   B3: { zh: "指纹/生物信息已完成。", en: "Biometrics completed." },
+  B5: { zh: "IRCC 尚未收到你的指纹。请查看生物信息请求消息了解详情。", en: "We have not received your fingerprints. Check your biometrics request message below for details." },
+  B6: { zh: "IRCC 需要你的指纹来处理申请。IRCC 会通过信件或邮件发送详情。", en: "We need your fingerprints to process your application. We will send you a letter or email with details." },
+  B7: { zh: "IRCC 尚未收到你的指纹。请查看生物信息请求消息了解详情。", en: "We have not received your fingerprints. Check your biometrics request message for details." },
+  B8: { zh: "IRCC 不需要你的指纹。", en: "We do not need your fingerprints." },
+  B9: { zh: "已完成。你已提供指纹；如有问题，IRCC 会联系你。", en: "Completed. You have provided your fingerprints. If there are any issues, you will be contacted." },
+  BC0: { zh: "不适用。", en: "Not applicable." },
   BC1: { zh: "申请正在处理中。IRCC 会在开始背景调查时发送消息。", en: "Your application is in progress. IRCC will message you when the background check starts." },
   BC2: { zh: "IRCC 正在处理背景调查；如需更多信息会发送消息。", en: "IRCC is processing your background check and will message you if more information is needed." },
   BC3: { zh: "背景调查已完成。", en: "Background check completed." },
+  BC4: { zh: "不适用。", en: "Not applicable." },
+  FD0: { zh: "", en: "" },
   FD1: { zh: "申请正在处理中。最终决定作出后，IRCC 会发送消息。", en: "Your application is in progress. IRCC will message you once the final decision is made." },
   FD2: { zh: "申请已获批，请查看消息。", en: "Application approved. Check your messages." },
   FD3: { zh: "申请已被拒，请查看消息。", en: "Application refused. Check your messages." },
   FD4: { zh: "申请已撤回，请查看消息。", en: "Application withdrawn." },
   FD5: { zh: "申请已取消，请查看消息。", en: "Application cancelled. Check your messages." },
+  FD6: { zh: "申请已获批。你需要提交有效护照以完成申请。请查看下方消息了解详情。", en: "Your application was approved. You need to send us your valid passport to finalize your application. Check your messages below for details." },
+  FD7: { zh: "申请因资料不完整而取消。请查看下方消息了解详情。", en: "Your application was cancelled because it was incomplete. Check your messages below for details." },
+  FD8: { zh: "申请无法撤回。请查看下方消息了解详情。", en: "Your application cannot be withdrawn. Check your messages below for details." },
+  FD9: { zh: "申请已获批。你需要提交有效护照以完成申请。IRCC 会通过信件或邮件发送详情。", en: "Your application was approved. You need to send us your valid passport to finalize your application. We will send you a letter or email with details." },
+  FD10: { zh: "申请已被拒。IRCC 会通过信件或邮件发送详情。", en: "We regret to inform you that your application was refused. We will send you a letter or email with details." },
+  FD11: { zh: "申请已撤回。IRCC 会通过信件或邮件发送详情。", en: "Your application was withdrawn. We will send you a letter or email with details." },
+  FD12: { zh: "申请无法撤回。IRCC 会通过信件或邮件发送详情。", en: "Your application cannot be withdrawn. We will send you a letter or email with details." },
+  FD13: { zh: "已找到公民身份记录。请查看下方消息了解详情。", en: "A record of citizenship was found. Check your messages below for details." },
+  FD14: { zh: "已找到公民身份记录。IRCC 会通过信件或邮件发送详情。", en: "A record of citizenship was found. We will send you a letter or email with details." },
+  FD15: { zh: "未找到公民身份记录。请查看下方消息了解详情。", en: "A record of citizenship was not found. Check your messages below for details." },
+  FD16: { zh: "未找到公民身份记录。IRCC 会通过信件或邮件发送详情。", en: "A record of citizenship was not found. We will send you a letter or email with details." },
+  FD17: { zh: "申请已获批。IRCC 会通过信件或邮件发送详情。", en: "Your application was approved. We will send you a letter or email with details." },
+  FD18: { zh: "申请已取消。IRCC 会发送包含详情的消息。", en: "Your application was cancelled. We will send you a message with details." },
+  FD20: { zh: "IRCC 无法处理你的申请，因为该申请已被视为放弃。请查看下方消息了解详情。", en: "We cannot process your application because it was abandoned. Check your messages below for details." },
+  FD21: { zh: "IRCC 无法处理你的申请，因为该申请已被视为放弃。IRCC 会通过信件或邮件发送详情。", en: "We cannot process your application because it was abandoned. We will send you a letter or email with details." },
+  FD22: { zh: "你的难民申请不符合转交 IRB 的资格。", en: "We regret to inform you that your refugee claim is ineligible to be referred to the IRB." },
+  FD23: { zh: "IRCC 很快会向你提供决定。", en: "You will be provided with a decision shortly." },
+  FD24: { zh: "申请正在处理中。", en: "Your application is in progress." },
   PS0: { zh: "档案处理中", en: "Profile in progress" },
+  PBT0: { zh: "", en: "" },
+  PBT1: { zh: "预计剩余处理时间", en: "Estimated remaining processing time" },
+  PBT2: { zh: "你的申请已撤回。", en: "Your application was withdrawn." },
+  PBT3: { zh: "你的申请已完成。", en: "Your application was completed." },
+  PBT4: { zh: "你的申请已取消。", en: "Your application was cancelled." },
+  PBT5: { zh: "你的申请处理时间比通常更长。", en: "Your application is taking us longer than usual to process." },
+  PBT6: { zh: "IRCC 已完成你的申请处理。", en: "We're done processing your application." },
+  PBT7: { zh: "你的申请已被视为放弃。", en: "Your application was abandoned." },
+  PBS0: { zh: "", en: "" },
+  PBS1: { zh: "为帮助你估计 IRCC 何时可能作出决定，IRCC 已在你的账户中加入处理时间。", en: "To help you estimate when we could reach a decision on your application, we added a processing time to your account." },
+  PBS2: { zh: "你可能暂时不会收到 IRCC 消息，这是正常情况。大多数申请进展会在接近预计完成日期时发生。", en: "You may not hear from us for a little while, this is normal. Most of the progress on your application happens closer to your estimated completion date." },
+  PBS3: { zh: "请确保阅读消息并在 IRCC 要求时采取行动，这有助于推进申请处理。", en: "Make sure you read your messages and take action when we ask you to. This will help move the application process along." },
+  PBS4: { zh: "你的申请处理时间比通常更长。申请量可能逐月变化。请阅读消息并在 IRCC 要求时采取行动。", en: "Your application is taking us longer than usual to process. The volume of applications we receive can vary from one month to the next. Make sure you read your messages and take action when we ask you to." },
+  PBS5: { zh: "你的申请处理时间比通常更长。约 20% 的申请更复杂，需要更久处理。请阅读消息并在 IRCC 要求时采取行动。", en: "Your application is taking us longer than usual to process. About 20% of our applications are more complex to process." },
+  "01": { zh: "天", en: "day(s)" },
+  "02": { zh: "周", en: "week(s)" },
+  "03": { zh: "个月", en: "month(s)" },
+  "04": { zh: "年", en: "year(s)" },
 };
 
 const irccMessageTagMap: Record<string, { zh: string; en: string }> = {
@@ -2587,7 +2670,41 @@ function formatIrccCode(value: string, languageMode: LanguageMode): string {
   if (!mapped) {
     return `${languageMode === "zh" ? "未知状态码" : "Unknown status code"}：${value}`;
   }
+  if (!mapped[languageMode]) {
+    return "-";
+  }
   return `${mapped[languageMode]}（${value}）`;
+}
+
+function formatIrccBoolean(value: unknown, languageMode: LanguageMode): string {
+  if (typeof value !== "boolean") {
+    return "-";
+  }
+  return value ? (languageMode === "zh" ? "是" : "Yes") : (languageMode === "zh" ? "否" : "No");
+}
+
+function formatIrccPlainValue(value: unknown, languageMode: LanguageMode): string {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  if (typeof value === "boolean") {
+    return formatIrccBoolean(value, languageMode);
+  }
+  if (typeof value === "string" && irccStatusCodeMap[value]) {
+    return formatIrccCode(value, languageMode);
+  }
+  return String(value);
+}
+
+function formatIrccRemainingTime(appStatus: Record<string, unknown>, languageMode: LanguageMode): string {
+  const value = appStatus.estimatedRemainingProcessingTime;
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  const unit = typeof appStatus.estimatedRemainingProcessingTimeUnitOfMeasure === "string"
+    ? formatIrccCode(appStatus.estimatedRemainingProcessingTimeUnitOfMeasure, languageMode)
+    : "";
+  return `${value}${unit && unit !== "-" ? ` ${unit}` : ""}`;
 }
 
 function formatIrccMessageTag(value: unknown, languageMode: LanguageMode): string {
@@ -2632,6 +2749,7 @@ function IrccCaseDetail(props: {
   const appStatus = snapshot?.appStatus ?? {};
   const applicationInfo = snapshot?.applicationInfo ?? {};
   const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
+  const documentStatus = Array.isArray(appStatus.documentStatus) ? appStatus.documentStatus : [];
   const applicant = getIrccApplicant(snapshot);
   const statusLabels = props.languageMode === "zh"
     ? {
@@ -2648,6 +2766,13 @@ function IrccCaseDetail(props: {
         dateReceived: "接收日期",
         biometricsNumber: "指纹编号",
         biometricsExpiry: "指纹有效期",
+        processingTitle: "处理时间标题",
+        processingMessage: "处理时间说明",
+        estimatedCompletionDate: "预计完成日期",
+        remainingProcessingTime: "预计剩余处理时间",
+        processingTimeAvailable: "处理时间可用",
+        processingTimeExceeded: "已超过处理时间",
+        documentStatus: "文件状态",
       }
     : {
         eligibility: "Review of eligibility",
@@ -2663,9 +2788,16 @@ function IrccCaseDetail(props: {
         dateReceived: "Date received",
         biometricsNumber: "Biometrics number",
         biometricsExpiry: "Biometrics expiry",
+        processingTitle: "Processing time title",
+        processingMessage: "Processing time message",
+        estimatedCompletionDate: "Estimated completion date",
+        remainingProcessingTime: "Estimated remaining processing time",
+        processingTimeAvailable: "Processing time available",
+        processingTimeExceeded: "Processing time exceeded",
+        documentStatus: "Document status",
       };
   return (
-    <>
+    <div className="ircc-detail-stack">
       <section className="panel">
         <div className="panel-title">
           <div>
@@ -2684,26 +2816,26 @@ function IrccCaseDetail(props: {
             </button>
           </div>
         </div>
-        <div className="stack" style={{ marginBottom: "24px" }}>
+        <div className="stack">
           <div className="notice">{props.t("irccPortalIntro")}</div>
           {props.targetCase.lastErrorMessage && (
             <div className="notice">
               <strong>{props.t("irccLastError")}：</strong>{props.targetCase.lastErrorMessage}
             </div>
           )}
-          <div className="two-col metric-grid">
+          <div className="two-col metric-grid ircc-metric-grid">
             <Metric label={props.t("irccApplicationNumber")} value={props.targetCase.applicationNumber || "-"} />
             <Metric label={props.t("irccAppId")} value={props.targetCase.appId} />
           </div>
-          <div className="two-col metric-grid">
+          <div className="two-col metric-grid ircc-metric-grid">
             <Metric label={props.t("irccPrincipalApplicant")} value={props.targetCase.principalApplicant || String(applicant.fullName || "-")} />
             <Metric label={props.t("irccPortalEmail")} value={props.targetCase.portalEmailMasked} />
           </div>
-          <div className="two-col metric-grid">
+          <div className="two-col metric-grid ircc-metric-grid">
             <Metric label={props.t("notifyEmail")} value={props.targetCase.receiveEmail} />
             <Metric label={props.t("lastCheckMode")} value={formatTriggerType(props.targetCase.lastTriggerType, props.t)} />
           </div>
-          <div className="two-col metric-grid">
+          <div className="two-col metric-grid ircc-metric-grid">
             <Metric label={props.t("lastCheckedAt")} value={formatTime(props.targetCase.lastCheckedAt, props.languageMode)} />
             <Metric label={props.t("nextCheckAt")} value={formatTime(props.targetCase.nextCheckAt, props.languageMode)} />
           </div>
@@ -2724,24 +2856,43 @@ function IrccCaseDetail(props: {
         </div>
       </section>
 
+      <section className="panel ircc-section">
+        <div className="panel-title">
+          <h2 className="subhead">{props.t("irccApplicantInfo")}</h2>
+          <UserRound size={18} />
+        </div>
+        <div className="two-col metric-grid ircc-metric-grid">
+          <Metric label={statusLabels.principalApplicant} value={String(applicant.fullName || props.targetCase.principalApplicant || "-")} />
+          <Metric label="UCI" value={String(applicant.uci || "-")} />
+        </div>
+        <div className="two-col metric-grid ircc-metric-grid">
+          <Metric label={statusLabels.applicationNumber} value={String(applicant.appNumber || props.targetCase.applicationNumber || "-")} />
+          <Metric label={statusLabels.dateReceived} value={String(applicant.receivedDate || "-")} />
+        </div>
+        <div className="two-col metric-grid ircc-metric-grid">
+          <Metric label={statusLabels.biometricsNumber} value={String(applicant.biometricNumber || "-")} />
+          <Metric label={statusLabels.biometricsExpiry} value={String(applicant.biometricExpiryDate || "-")} />
+        </div>
+      </section>
+
       <section className="panel">
         <div className="panel-title">
           <h2 className="subhead">{props.t("irccApplicationStatus")}</h2>
           <span className="status-badge">{readIrccStatus(appStatus.applicationStatus, props.languageMode) || props.t("noStatus")}</span>
         </div>
-        <div className="two-col metric-grid">
+        <div className="two-col metric-grid ircc-metric-grid">
           <Metric label={statusLabels.eligibility} value={readIrccStatus(appStatus.eligibility, props.languageMode)} />
           <Metric label={statusLabels.medical} value={readIrccStatus(appStatus.medical, props.languageMode)} />
         </div>
-        <div className="two-col metric-grid">
+        <div className="two-col metric-grid ircc-metric-grid">
           <Metric label={statusLabels.additionalDocuments} value={readIrccStatus(appStatus.additionalDocuments, props.languageMode)} />
           <Metric label={statusLabels.interview} value={readIrccStatus(appStatus.interviewOrAppointment, props.languageMode)} />
         </div>
-        <div className="two-col metric-grid">
+        <div className="two-col metric-grid ircc-metric-grid">
           <Metric label={statusLabels.biometrics} value={readIrccStatus(appStatus.biometricInformation, props.languageMode)} />
           <Metric label={statusLabels.backgroundCheck} value={readIrccStatus(appStatus.backgroundChecks, props.languageMode)} />
         </div>
-        <div className="two-col metric-grid">
+        <div className="two-col metric-grid ircc-metric-grid">
           <Metric label={statusLabels.finalDecision} value={readIrccStatus(appStatus.finalDecision, props.languageMode)} />
           <Metric label={statusLabels.ghostUpdate} value={applicationInfo.updatedTimestamp || applicationInfo.updatedDate ? formatTime(String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate), props.languageMode) : "-"} />
         </div>
@@ -2750,21 +2901,39 @@ function IrccCaseDetail(props: {
 
       <section className="panel">
         <div className="panel-title">
-          <h2 className="subhead">{props.t("irccApplicantInfo")}</h2>
-          <UserRound size={18} />
+          <h2 className="subhead">{statusLabels.processingTitle}</h2>
+          <span className="status-badge">{formatIrccBoolean(appStatus.processingTimeAvailable, props.languageMode)}</span>
         </div>
-        <div className="two-col metric-grid">
-          <Metric label={statusLabels.principalApplicant} value={String(applicant.fullName || props.targetCase.principalApplicant || "-")} />
-          <Metric label="UCI" value={String(applicant.uci || "-")} />
+        <div className="two-col metric-grid ircc-metric-grid">
+          <Metric label={statusLabels.processingTitle} value={formatIrccPlainValue(appStatus.processingTimeBarTitle, props.languageMode)} />
+          <Metric label={statusLabels.processingMessage} value={formatIrccPlainValue(appStatus.processingTimeBarMessage, props.languageMode)} />
         </div>
-        <div className="two-col metric-grid">
-          <Metric label={statusLabels.applicationNumber} value={String(applicant.appNumber || props.targetCase.applicationNumber || "-")} />
-          <Metric label={statusLabels.dateReceived} value={String(applicant.receivedDate || "-")} />
+        <div className="two-col metric-grid ircc-metric-grid">
+          <Metric label={statusLabels.estimatedCompletionDate} value={formatIrccPlainValue(appStatus.estimatedCompletionDate, props.languageMode)} />
+          <Metric label={statusLabels.remainingProcessingTime} value={formatIrccRemainingTime(appStatus, props.languageMode)} />
         </div>
-        <div className="two-col metric-grid">
-          <Metric label={statusLabels.biometricsNumber} value={String(applicant.biometricNumber || "-")} />
-          <Metric label={statusLabels.biometricsExpiry} value={String(applicant.biometricExpiryDate || "-")} />
+        <div className="two-col metric-grid ircc-metric-grid">
+          <Metric label={statusLabels.processingTimeAvailable} value={formatIrccBoolean(appStatus.processingTimeAvailable, props.languageMode)} />
+          <Metric label={statusLabels.processingTimeExceeded} value={formatIrccBoolean(appStatus.processingTimeExceeded, props.languageMode)} />
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2 className="subhead">{statusLabels.documentStatus}</h2>
+          <span className="status-badge">{documentStatus.length}</span>
+        </div>
+        {documentStatus.length > 0 ? (
+          <div className="timeline">
+            {documentStatus.map((item, index) => (
+              <div key={index} className="timeline-item">
+                <div className="timeline-desc">{JSON.stringify(item)}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-state compact">{props.languageMode === "zh" ? "暂无文件状态记录" : "No document status records"}</p>
+        )}
       </section>
 
       <section className="panel">
@@ -2809,7 +2978,7 @@ function IrccCaseDetail(props: {
           {props.history.length === 0 && <p className="empty-state">{props.t("irccNoHistory")}</p>}
         </div>
       </section>
-    </>
+    </div>
   );
 }
 
