@@ -195,6 +195,7 @@ def listCasesForQueryRuns(rows: list[dict]) -> list[dict]:
     for row in rows:
         item = dict(row)
         item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
+        item["profile_type"] = item.get("profile_type") or "ceac"
         runs.append(item)
     return runs
 
@@ -206,6 +207,7 @@ def listQueryJobsForAdmin(rows: list[dict]) -> list[dict]:
         item = dict(row)
         item["queue_position"] = index
         item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
+        item["profile_type"] = item.get("profile_type") or "ceac"
         baseTime = item.get("started_at") if item.get("status") == "running" else item.get("created_at")
         try:
             started = datetime.fromisoformat(str(baseTime)) if baseTime else now
@@ -225,6 +227,7 @@ def listScheduledQueryJobsForAdmin(rows: list[dict]) -> list[dict]:
         item = dict(row)
         item["schedule_position"] = index
         item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
+        item["profile_type"] = item.get("profile_type") or "ceac"
         try:
             nextCheckAt = datetime.fromisoformat(str(item.get("next_check_at") or ""))
             if nextCheckAt.tzinfo is None:
@@ -242,6 +245,7 @@ def listFinishedQueryJobsForAdmin(rows: list[dict]) -> list[dict]:
         item = dict(row)
         item["finished_position"] = index
         item["application_num"] = decryptIfNeeded(item.get("application_num")) or ""
+        item["profile_type"] = item.get("profile_type") or "ceac"
         startedAt = parseOptionalIso(item.get("started_at"))
         finishedAt = parseOptionalIso(item.get("finished_at"))
         item["duration_seconds"] = max(0, int((finishedAt - startedAt).total_seconds())) if startedAt and finishedAt else 0
@@ -964,11 +968,28 @@ def adminUsers(_: dict = Depends(adminDependency)) -> dict:
                 u.is_email_verified,
                 u.created_at,
                 u.updated_at,
-                COUNT(c.id) AS case_count,
-                MAX(c.last_checked_at) AS last_checked_at
+                (
+                    SELECT COUNT(*)
+                    FROM ceac_cases c
+                    WHERE c.user_id = u.id
+                ) + (
+                    SELECT COUNT(*)
+                    FROM ircc_cases ic
+                    WHERE ic.user_id = u.id
+                ) AS case_count,
+                NULLIF(MAX(
+                    COALESCE((
+                        SELECT MAX(c.last_checked_at)
+                        FROM ceac_cases c
+                        WHERE c.user_id = u.id
+                    ), ''),
+                    COALESCE((
+                        SELECT MAX(ic.last_checked_at)
+                        FROM ircc_cases ic
+                        WHERE ic.user_id = u.id
+                    ), '')
+                ), '') AS last_checked_at
             FROM users u
-            LEFT JOIN ceac_cases c ON c.user_id = u.id
-            GROUP BY u.id
             ORDER BY u.id ASC
             """,
         ).fetchall()
@@ -1005,7 +1026,47 @@ def adminPatchUserAccountTier(userId: int, payload: AccountTierPatch, request: R
 
 @app.get("/api/admin/cases")
 def adminCases(_: dict = Depends(adminDependency)) -> dict:
-    return {"cases": listCases()}
+    ceacCases = [
+        {
+            **case,
+            "profileType": "ceac",
+            "adminCaseKey": f"ceac-{case['id']}",
+        }
+        for case in listCases()
+    ]
+    irccCases = [
+        {
+            "id": case["id"],
+            "userId": case["userId"],
+            "displayName": case["displayName"],
+            "location": "Canada",
+            "applicationNum": case["applicationNumber"] or case["appId"],
+            "passportNumber": "",
+            "surname": "",
+            "receiveEmail": case["receiveEmail"],
+            "senderMode": case["senderMode"],
+            "isEnabled": case["isEnabled"],
+            "ceacAutoLockedByPassportSlot": False,
+            "ceacConsecutiveErrorCount": 0,
+            "emailNotificationsEnabled": case["emailNotificationsEnabled"],
+            "nextCheckAt": case["nextCheckAt"],
+            "lastCheckedAt": case["lastCheckedAt"],
+            "lastTriggerType": case["lastTriggerType"],
+            "lastStatus": case["lastSummary"] or None,
+            "lastDescription": case["lastErrorMessage"],
+            "lastCeacError": case["lastErrorMessage"],
+            "passportSlotMonitor": None,
+            "createdAt": case["createdAt"],
+            "updatedAt": case["updatedAt"],
+            "profileType": "ircc",
+            "adminCaseKey": f"ircc-{case['id']}",
+            "appId": case["appId"],
+            "applicationNumber": case["applicationNumber"],
+            "principalApplicant": case["principalApplicant"],
+        }
+        for case in listIrccCases()
+    ]
+    return {"cases": ceacCases + irccCases}
 
 
 @app.post("/api/admin/cases/{caseId}/restore-ceac-auto-query")
@@ -1026,12 +1087,52 @@ def adminQueryRuns(_: dict = Depends(adminDependency)) -> dict:
     with getConnection() as connection:
         rows = connection.execute(
             """
-            SELECT r.*, c.display_name, c.application_num, u.email AS user_email, s.status
-            FROM query_runs r
-            JOIN ceac_cases c ON c.id = r.case_id
-            JOIN users u ON u.id = c.user_id
-            LEFT JOIN status_catalog s ON s.id = r.status_id
-            ORDER BY r.id DESC
+            SELECT *
+            FROM (
+                SELECT
+                    r.id,
+                    r.case_id,
+                    c.display_name,
+                    c.application_num,
+                    u.email AS user_email,
+                    r.started_at,
+                    r.finished_at,
+                    r.trigger_type,
+                    r.success,
+                    s.status,
+                    r.error_message,
+                    r.duration_ms,
+                    'ceac' AS profile_type
+                FROM query_runs r
+                JOIN ceac_cases c ON c.id = r.case_id
+                JOIN users u ON u.id = c.user_id
+                LEFT JOIN status_catalog s ON s.id = r.status_id
+                UNION ALL
+                SELECT
+                    1000000000 + r.id AS id,
+                    r.case_id,
+                    c.display_name,
+                    COALESCE(NULLIF(c.application_number, ''), c.app_id) AS application_num,
+                    u.email AS user_email,
+                    r.started_at,
+                    r.finished_at,
+                    r.trigger_type,
+                    r.success,
+                    (
+                        SELECT h.application_status
+                        FROM ircc_status_history h
+                        WHERE h.case_id = c.id
+                        ORDER BY h.id DESC
+                        LIMIT 1
+                    ) AS status,
+                    r.error_message,
+                    r.duration_ms,
+                    'ircc' AS profile_type
+                FROM ircc_query_runs r
+                JOIN ircc_cases c ON c.id = r.case_id
+                JOIN users u ON u.id = c.user_id
+            )
+            ORDER BY finished_at DESC, id DESC
             LIMIT 200
             """,
         ).fetchall()
@@ -1044,108 +1145,189 @@ def adminQueryJobs(_: dict = Depends(adminDependency)) -> dict:
     with getConnection() as connection:
         rows = connection.execute(
             """
-            SELECT
-                j.id,
-                j.case_id,
-                j.trigger_type,
-                j.status,
-                j.attempts,
-                j.locked_at,
-                j.locked_by,
-                j.started_at,
-                j.finished_at,
-                j.error_message,
-                j.created_at,
-                j.updated_at,
-                c.display_name,
-                c.application_num,
-                u.email AS user_email,
-                u.worker_priority
-            FROM query_jobs j
-            JOIN ceac_cases c ON c.id = j.case_id
-            JOIN users u ON u.id = c.user_id
-            WHERE j.status IN ('queued', 'running')
+            SELECT *
+            FROM (
+                SELECT
+                    j.id,
+                    j.case_id,
+                    j.trigger_type,
+                    j.status,
+                    j.attempts,
+                    j.locked_at,
+                    j.locked_by,
+                    j.started_at,
+                    j.finished_at,
+                    j.error_message,
+                    j.created_at,
+                    j.updated_at,
+                    c.display_name,
+                    c.application_num,
+                    u.email AS user_email,
+                    u.worker_priority,
+                    'ceac' AS profile_type
+                FROM query_jobs j
+                JOIN ceac_cases c ON c.id = j.case_id
+                JOIN users u ON u.id = c.user_id
+                WHERE j.status IN ('queued', 'running')
+                UNION ALL
+                SELECT
+                    1000000000 + j.id AS id,
+                    j.case_id,
+                    j.trigger_type,
+                    j.status,
+                    j.attempts,
+                    j.locked_at,
+                    j.locked_by,
+                    j.started_at,
+                    j.finished_at,
+                    j.error_message,
+                    j.created_at,
+                    j.updated_at,
+                    c.display_name,
+                    COALESCE(NULLIF(c.application_number, ''), c.app_id) AS application_num,
+                    u.email AS user_email,
+                    u.worker_priority,
+                    'ircc' AS profile_type
+                FROM ircc_query_jobs j
+                JOIN ircc_cases c ON c.id = j.case_id
+                JOIN users u ON u.id = c.user_id
+                WHERE j.status IN ('queued', 'running')
+            )
             ORDER BY
-                CASE WHEN j.status = 'running' THEN 0 ELSE 1 END,
-                u.worker_priority ASC,
-                j.id ASC
+                CASE WHEN status = 'running' THEN 0 ELSE 1 END,
+                worker_priority ASC,
+                id ASC
             LIMIT 200
             """,
         ).fetchall()
         scheduledRows = connection.execute(
             """
-            SELECT
-                'ceac-' || c.id AS scheduled_id,
-                c.id AS case_id,
-                'automatic' AS trigger_type,
-                c.next_check_at,
-                c.display_name,
-                c.application_num,
-                u.email AS user_email,
-                u.worker_priority
-            FROM ceac_cases c
-            JOIN users u ON u.id = c.user_id
-            WHERE c.is_enabled = 1
-              AND c.next_check_at IS NOT NULL
-              AND c.next_check_at > ?
-              AND NOT EXISTS (
-                  SELECT 1 FROM query_jobs j
-                  WHERE j.case_id = c.id
-                    AND j.status IN ('queued', 'running')
-                    AND j.trigger_type NOT LIKE 'passport_slot_%'
-              )
-            UNION ALL
-            SELECT
-                'gts-' || m.case_id AS scheduled_id,
-                m.case_id AS case_id,
-                'passport_slot_automatic' AS trigger_type,
-                m.next_check_at,
-                c.display_name,
-                c.application_num,
-                u.email AS user_email,
-                u.worker_priority
-            FROM passport_slot_monitors m
-            JOIN ceac_cases c ON c.id = m.case_id
-            JOIN users u ON u.id = c.user_id
-            WHERE m.is_enabled = 1
-              AND m.next_check_at IS NOT NULL
-              AND m.next_check_at > ?
-              AND NOT EXISTS (
-                  SELECT 1 FROM query_jobs j
-                  WHERE j.case_id = m.case_id
-                    AND j.status IN ('queued', 'running')
-                    AND j.trigger_type LIKE 'passport_slot_%'
-              )
+            SELECT *
+            FROM (
+                SELECT
+                    'ceac-' || c.id AS scheduled_id,
+                    c.id AS case_id,
+                    'automatic' AS trigger_type,
+                    c.next_check_at,
+                    c.display_name,
+                    c.application_num,
+                    u.email AS user_email,
+                    u.worker_priority,
+                    'ceac' AS profile_type
+                FROM ceac_cases c
+                JOIN users u ON u.id = c.user_id
+                WHERE c.is_enabled = 1
+                  AND c.next_check_at IS NOT NULL
+                  AND c.next_check_at > ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM query_jobs j
+                      WHERE j.case_id = c.id
+                        AND j.status IN ('queued', 'running')
+                        AND j.trigger_type NOT LIKE 'passport_slot_%'
+                  )
+                UNION ALL
+                SELECT
+                    'gts-' || m.case_id AS scheduled_id,
+                    m.case_id AS case_id,
+                    'passport_slot_automatic' AS trigger_type,
+                    m.next_check_at,
+                    c.display_name,
+                    c.application_num,
+                    u.email AS user_email,
+                    u.worker_priority,
+                    'ceac' AS profile_type
+                FROM passport_slot_monitors m
+                JOIN ceac_cases c ON c.id = m.case_id
+                JOIN users u ON u.id = c.user_id
+                WHERE m.is_enabled = 1
+                  AND m.next_check_at IS NOT NULL
+                  AND m.next_check_at > ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM query_jobs j
+                      WHERE j.case_id = m.case_id
+                        AND j.status IN ('queued', 'running')
+                        AND j.trigger_type LIKE 'passport_slot_%'
+                  )
+                UNION ALL
+                SELECT
+                    'ircc-' || c.id AS scheduled_id,
+                    c.id AS case_id,
+                    'ircc_automatic' AS trigger_type,
+                    c.next_check_at,
+                    c.display_name,
+                    COALESCE(NULLIF(c.application_number, ''), c.app_id) AS application_num,
+                    u.email AS user_email,
+                    u.worker_priority,
+                    'ircc' AS profile_type
+                FROM ircc_cases c
+                JOIN users u ON u.id = c.user_id
+                WHERE c.is_enabled = 1
+                  AND c.next_check_at IS NOT NULL
+                  AND c.next_check_at > ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ircc_query_jobs j
+                      WHERE j.case_id = c.id
+                        AND j.status IN ('queued', 'running')
+                  )
+            )
             ORDER BY next_check_at ASC, worker_priority ASC, case_id ASC
             LIMIT 50
             """,
-            (nowIso, nowIso),
+            (nowIso, nowIso, nowIso),
         ).fetchall()
         finishedRows = connection.execute(
             """
-            SELECT
-                j.id,
-                j.case_id,
-                j.trigger_type,
-                j.status,
-                j.attempts,
-                j.locked_at,
-                j.locked_by,
-                j.started_at,
-                j.finished_at,
-                j.error_message,
-                j.created_at,
-                j.updated_at,
-                c.display_name,
-                c.application_num,
-                u.email AS user_email,
-                u.worker_priority
-            FROM query_jobs j
-            JOIN ceac_cases c ON c.id = j.case_id
-            JOIN users u ON u.id = c.user_id
-            WHERE j.status IN ('succeeded', 'failed')
-              AND j.finished_at IS NOT NULL
-            ORDER BY j.finished_at DESC, j.id DESC
+            SELECT *
+            FROM (
+                SELECT
+                    j.id,
+                    j.case_id,
+                    j.trigger_type,
+                    j.status,
+                    j.attempts,
+                    j.locked_at,
+                    j.locked_by,
+                    j.started_at,
+                    j.finished_at,
+                    j.error_message,
+                    j.created_at,
+                    j.updated_at,
+                    c.display_name,
+                    c.application_num,
+                    u.email AS user_email,
+                    u.worker_priority,
+                    'ceac' AS profile_type
+                FROM query_jobs j
+                JOIN ceac_cases c ON c.id = j.case_id
+                JOIN users u ON u.id = c.user_id
+                WHERE j.status IN ('succeeded', 'failed')
+                  AND j.finished_at IS NOT NULL
+                UNION ALL
+                SELECT
+                    1000000000 + j.id AS id,
+                    j.case_id,
+                    j.trigger_type,
+                    j.status,
+                    j.attempts,
+                    j.locked_at,
+                    j.locked_by,
+                    j.started_at,
+                    j.finished_at,
+                    j.error_message,
+                    j.created_at,
+                    j.updated_at,
+                    c.display_name,
+                    COALESCE(NULLIF(c.application_number, ''), c.app_id) AS application_num,
+                    u.email AS user_email,
+                    u.worker_priority,
+                    'ircc' AS profile_type
+                FROM ircc_query_jobs j
+                JOIN ircc_cases c ON c.id = j.case_id
+                JOIN users u ON u.id = c.user_id
+                WHERE j.status IN ('succeeded', 'failed')
+                  AND j.finished_at IS NOT NULL
+            )
+            ORDER BY finished_at DESC, id DESC
             LIMIT 50
             """,
         ).fetchall()

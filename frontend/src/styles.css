@@ -1107,7 +1107,7 @@ select:focus {
 
 .admin-case-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(130px, 0.8fr) auto auto;
+  grid-template-columns: minmax(140px, 1fr) auto minmax(130px, 0.8fr) auto auto;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
@@ -1495,6 +1495,12 @@ select:focus {
   }
 
   .profile-panel .two-col {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .two-col {
     display: grid;
     grid-template-columns: 1fr;
     gap: 14px;

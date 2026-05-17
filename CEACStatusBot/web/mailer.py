@@ -20,6 +20,108 @@ class DailyEmailLimitExceeded(RuntimeError):
 SUPPORT_IMAGE_CONTENT_ID = "ceacstatusbot-support-qr"
 
 
+def isKeyValueLine(line: str) -> bool:
+    if "://" in line:
+        return False
+    separators = ["：", ":"]
+    for separator in separators:
+        if separator not in line:
+            continue
+        key, value = line.split(separator, 1)
+        key = key.strip()
+        if 1 <= len(key) <= 32 and value.strip():
+            return True
+    return False
+
+
+def splitKeyValueLine(line: str) -> tuple[str, str]:
+    separator = "：" if "：" in line else ":"
+    key, value = line.split(separator, 1)
+    return key.strip(), value.strip()
+
+
+def isSectionHeading(line: str) -> bool:
+    stripped = line.strip()
+    return bool(stripped) and stripped.endswith("：") and not isKeyValueLine(stripped)
+
+
+def splitEmailBlocks(body: str) -> list[list[str]]:
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for rawLine in body.splitlines():
+        line = rawLine.rstrip()
+        if not line.strip():
+            if current:
+                blocks.append(current)
+                current = []
+            continue
+        current.append(line)
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def renderKeyValueTable(lines: list[str]) -> str:
+    rows = []
+    for line in lines:
+        key, value = splitKeyValueLine(line)
+        rows.append(
+            f"""
+            <tr>
+              <td style="width:34%;padding:8px 12px;border-bottom:1px solid #eef2f7;color:#64748b;font-size:13px;vertical-align:top;">{escape(key)}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #eef2f7;color:#0f172a;font-size:14px;font-weight:600;vertical-align:top;word-break:break-word;">{escape(value)}</td>
+            </tr>
+            """,
+        )
+    return f"""
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;background:#ffffff;margin:0;">
+        <tbody>{''.join(rows)}</tbody>
+      </table>
+    """
+
+
+def renderTextLines(lines: list[str]) -> str:
+    if len(lines) == 1:
+        return f'<p style="margin:0;color:#334155;font-size:14px;line-height:1.75;">{escape(lines[0])}</p>'
+    items = "".join(
+        f'<li style="margin:0 0 6px;color:#334155;font-size:14px;line-height:1.65;word-break:break-word;">{escape(line)}</li>'
+        for line in lines
+    )
+    return f'<ul style="margin:0;padding-left:20px;">{items}</ul>'
+
+
+def renderEmailBlocks(body: str) -> str:
+    blocks = splitEmailBlocks(body)
+    htmlParts: list[str] = []
+    index = 0
+    while index < len(blocks):
+        block = blocks[index]
+        if len(block) == 1 and isSectionHeading(block[0]):
+            title = block[0].strip()[:-1]
+            contentHtml = ""
+            if index + 1 < len(blocks):
+                nextBlock = blocks[index + 1]
+                if nextBlock and all(isKeyValueLine(line) for line in nextBlock):
+                    contentHtml = renderKeyValueTable(nextBlock)
+                else:
+                    contentHtml = renderTextLines(nextBlock)
+                index += 1
+            htmlParts.append(
+                f"""
+                <section style="margin:20px 0 0;">
+                  <h2 style="margin:0 0 10px;color:#111827;font-size:15px;line-height:1.4;">{escape(title)}</h2>
+                  {contentHtml}
+                </section>
+                """,
+            )
+        elif all(isKeyValueLine(line) for line in block):
+            htmlParts.append(f'<section style="margin:16px 0 0;">{renderKeyValueTable(block)}</section>')
+        else:
+            htmlParts.append(f'<section style="margin:16px 0 0;">{renderTextLines(block)}</section>')
+        index += 1
+    return "".join(htmlParts)
+
+
 def getSupportImagePath() -> Path:
     return Path(__file__).resolve().parents[2] / "frontend" / "public" / "support" / "buy-me-a-coffee.jpg"
 
@@ -37,23 +139,29 @@ def buildSupportFooterPlain() -> str:
 
 
 def buildEmailHtml(body: str, *, includeSupport: bool = False) -> str:
-    bodyHtml = "<br>".join(escape(line) for line in body.splitlines())
+    bodyHtml = renderEmailBlocks(body)
     supportHtml = ""
     if includeSupport:
         supportHtml = f"""
           <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 16px;" />
-          <div style="font-size:14px;line-height:1.6;color:#111827;">
-            <strong>支持这个非盈利项目</strong>
-            <p style="margin:8px 0 12px;">如果 CEACStatusBot 对你有帮助，欢迎自愿扫码赞赏，支持服务器和维护成本。</p>
-            <img src="cid:{SUPPORT_IMAGE_CONTENT_ID}" alt="支持 CEACStatusBot" style="display:block;width:180px;max-width:100%;height:auto;border-radius:8px;margin:8px 0 12px;" />
+          <div style="padding:14px 16px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc;font-size:14px;line-height:1.6;color:#111827;">
+            <strong style="display:block;margin:0 0 6px;font-size:15px;">支持这个非盈利项目</strong>
+            <p style="margin:0 0 12px;color:#334155;">如果 CEACStatusBot 对你有帮助，欢迎自愿扫码赞赏，支持服务器和维护成本。</p>
+            <img src="cid:{SUPPORT_IMAGE_CONTENT_ID}" alt="支持 CEACStatusBot" style="display:block;width:180px;max-width:100%;height:auto;border-radius:8px;margin:8px 0 12px;border:1px solid #e5e7eb;" />
             <p style="margin:0;color:#6b7280;font-size:12px;">赞赏完全自愿，不购买官方服务，不保证签证结果、护照进度、slot 可用性或预约成功。</p>
           </div>
         """
     return f"""<!doctype html>
 <html>
-  <body style="margin:0;padding:24px;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;">
-    <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;">
-      <div style="font-size:15px;line-height:1.7;">{bodyHtml}</div>
+  <body style="margin:0;padding:24px;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;">
+    <div style="max-width:680px;margin:0 auto;">
+      <div style="padding:22px 24px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 12px 32px rgba(15,23,42,0.06);">
+        <div style="display:flex;align-items:center;gap:10px;margin:0 0 16px;">
+          <div style="width:10px;height:10px;border-radius:999px;background:#5e6ad2;"></div>
+          <div style="color:#475569;font-size:13px;font-weight:700;letter-spacing:0.02em;">CEACStatusBot</div>
+        </div>
+        {bodyHtml}
+      </div>
       {supportHtml}
     </div>
   </body>
@@ -109,6 +217,7 @@ def sendSystemEmail(toEmail: str, subject: str, body: str, htmlBody: str | None 
     if not config["fromEmail"] or not config["password"]:
         print(f"[mail] System email is not configured. Subject: {subject}, To: {toEmail}")
         return
+    renderedHtmlBody = htmlBody or buildEmailHtml(body)
     sendEmail(
         fromEmail=config["fromEmail"],
         toEmail=toEmail,
@@ -118,7 +227,7 @@ def sendSystemEmail(toEmail: str, subject: str, body: str, htmlBody: str | None 
         useSsl=config["useSsl"],
         subject=subject,
         body=body,
-        htmlBody=htmlBody,
+        htmlBody=renderedHtmlBody,
         inlineImages=inlineImages,
     )
 

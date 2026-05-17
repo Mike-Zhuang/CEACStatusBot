@@ -25,6 +25,7 @@ type AuthMode = "login" | "register" | "forgot";
 type AccountTier = "standard" | "premium";
 type MessageScope = ViewMode | "auth";
 type ProfileCountry = "us" | "ca";
+type QueryTriggerType = "manual" | "automatic" | "passport_slot_manual" | "passport_slot_automatic" | "ircc_manual" | "ircc_automatic" | "unknown";
 
 interface User {
   id: number;
@@ -140,11 +141,12 @@ interface QueryRun {
   user_email: string;
   started_at: string;
   finished_at: string;
-  trigger_type: "manual" | "automatic" | "passport_slot_manual" | "passport_slot_automatic" | "unknown";
+  trigger_type: QueryTriggerType;
   success: number;
   status: string | null;
   error_message: string;
   duration_ms: number;
+  profile_type?: "ceac" | "ircc";
 }
 
 interface AdminQueryJob {
@@ -155,7 +157,7 @@ interface AdminQueryJob {
   user_email: string;
   worker_priority: number;
   queue_position: number;
-  trigger_type: QueryRun["trigger_type"];
+  trigger_type: QueryTriggerType;
   status: "queued" | "running";
   attempts: number;
   locked_by: string | null;
@@ -163,6 +165,7 @@ interface AdminQueryJob {
   started_at: string | null;
   updated_at: string;
   wait_seconds: number;
+  profile_type?: "ceac" | "ircc";
 }
 
 interface AdminScheduledQueryJob {
@@ -173,9 +176,10 @@ interface AdminScheduledQueryJob {
   user_email: string;
   worker_priority: number;
   schedule_position: number;
-  trigger_type: QueryRun["trigger_type"];
+  trigger_type: QueryTriggerType;
   next_check_at: string;
   seconds_until_queue: number;
+  profile_type?: "ceac" | "ircc";
 }
 
 interface AdminFinishedQueryJob {
@@ -186,7 +190,7 @@ interface AdminFinishedQueryJob {
   user_email: string;
   worker_priority: number;
   finished_position: number;
-  trigger_type: QueryRun["trigger_type"];
+  trigger_type: QueryTriggerType;
   status: "succeeded" | "failed";
   error_message: string;
   locked_by: string | null;
@@ -194,6 +198,7 @@ interface AdminFinishedQueryJob {
   started_at: string | null;
   finished_at: string;
   duration_seconds: number;
+  profile_type?: "ceac" | "ircc";
 }
 
 interface QueryJob {
@@ -283,6 +288,14 @@ interface AdminUser {
   updated_at: string;
   case_count: number;
   last_checked_at: string | null;
+}
+
+interface AdminCase extends CeacCase {
+  profileType?: "ceac" | "ircc";
+  adminCaseKey?: string;
+  appId?: string;
+  applicationNumber?: string;
+  principalApplicant?: string;
 }
 
 interface SecurityEvent {
@@ -1121,7 +1134,7 @@ function formatDurationSeconds(seconds: number): string {
   return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
 }
 
-function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryRun["trigger_type"] | IrccCase["lastTriggerType"], t: (key: TranslationKey) => string): string {
+function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryTriggerType | IrccCase["lastTriggerType"], t: (key: TranslationKey) => string): string {
   if (value === "ircc_manual") {
     return `${t("irccPortalTitle")} · ${t("triggerManual")}`;
   }
@@ -1194,7 +1207,7 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [cases, setCases] = useState<CeacCase[]>([]);
   const [irccCases, setIrccCases] = useState<IrccCase[]>([]);
-  const [adminCases, setAdminCases] = useState<CeacCase[]>([]);
+  const [adminCases, setAdminCases] = useState<AdminCase[]>([]);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [irccHistory, setIrccHistory] = useState<IrccHistoryItem[]>([]);
@@ -1348,7 +1361,7 @@ export function App() {
     const [runsPayload, jobsPayload, casesPayload, usersPayload, systemEmailPayload, securityEventsPayload] = await Promise.all([
       requestJson<{ runs: QueryRun[] }>("/api/admin/query-runs"),
       requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[]; finishedJobs: AdminFinishedQueryJob[] }>("/api/admin/query-jobs"),
-      requestJson<{ cases: CeacCase[] }>("/api/admin/cases"),
+      requestJson<{ cases: AdminCase[] }>("/api/admin/cases"),
       requestJson<{ users: AdminUser[] }>("/api/admin/users"),
       requestJson<{ config: SystemEmailConfig }>("/api/admin/system-email"),
       requestJson<{ events: SecurityEvent[] }>("/api/admin/security-events?limit=200"),
@@ -2512,14 +2525,87 @@ function PublicNoticePanel(props: { t: (key: TranslationKey) => string }) {
   );
 }
 
-function readIrccStatus(status: unknown): string {
+const irccStatusCodeMap: Record<string, { zh: string; en: string }> = {
+  A11: { zh: "我们正在处理你的申请。若有更新或需要更多信息，IRCC 会发送消息。", en: "IRCC is processing your application and will send a message if there is an update or more information is needed." },
+  SUBMITTED: { zh: "已提交", en: "Submitted" },
+  IN_PROGRESS: { zh: "进行中", en: "In progress" },
+  E1: { zh: "申请正在处理中。IRCC 会在开始审查资格时发送消息。", en: "Your application is in progress. IRCC will message you when eligibility review starts." },
+  E2: { zh: "IRCC 正在审查你是否符合资格要求。", en: "IRCC is reviewing whether you meet the eligibility requirements." },
+  E3: { zh: "资格审查已通过，请查看最终决定。", en: "Eligibility review passed. Check the final decision." },
+  E4: { zh: "资格审查未通过，请查看最终决定。", en: "Eligibility review did not pass. Check the final decision." },
+  M1: { zh: "不需要体检；如有变化，IRCC 会发送消息。", en: "You do not need a medical exam. IRCC will message you if this changes." },
+  M2: { zh: "IRCC 已要求体检，请查看消息。", en: "IRCC has requested a medical exam. Check your messages." },
+  M3: { zh: "IRCC 正在审查体检结果。", en: "IRCC is reviewing your medical results." },
+  M4: { zh: "体检结果已通过。", en: "Medical results passed." },
+  M5: { zh: "体检结果未通过，请查看最终决定。", en: "Medical results did not pass. Check the final decision." },
+  AD1: { zh: "不需要补充文件。", en: "No additional documents are needed." },
+  AD2: { zh: "IRCC 需要补充文件，请查看消息。", en: "IRCC needs additional documents. Check your messages." },
+  AD3: { zh: "补充文件已上传。", en: "Additional documents uploaded." },
+  AD4: { zh: "补充文件已收到，正在审查。", en: "Additional documents received and under review." },
+  IA1: { zh: "不需要面试；如有变化，IRCC 会发送消息。", en: "You do not need an interview. IRCC will message you if this changes." },
+  IA2: { zh: "需要面试，请查看消息。", en: "An interview is required. Check your messages." },
+  IA3: { zh: "面试已完成。", en: "Interview completed." },
+  IA4: { zh: "面试已取消，请查看消息。", en: "Interview cancelled. Check your messages." },
+  B1: { zh: "不需要提供指纹；如有变化，IRCC 会发送消息。", en: "You do not need to give biometrics. IRCC will message you if this changes." },
+  B2: { zh: "需要提供指纹，请查看消息。", en: "Biometrics are required. Check your messages." },
+  B3: { zh: "指纹/生物信息已完成。", en: "Biometrics completed." },
+  BC1: { zh: "申请正在处理中。IRCC 会在开始背景调查时发送消息。", en: "Your application is in progress. IRCC will message you when the background check starts." },
+  BC2: { zh: "IRCC 正在处理背景调查；如需更多信息会发送消息。", en: "IRCC is processing your background check and will message you if more information is needed." },
+  BC3: { zh: "背景调查已完成。", en: "Background check completed." },
+  FD1: { zh: "申请正在处理中。最终决定作出后，IRCC 会发送消息。", en: "Your application is in progress. IRCC will message you once the final decision is made." },
+  FD2: { zh: "申请已获批，请查看消息。", en: "Application approved. Check your messages." },
+  FD3: { zh: "申请已被拒，请查看消息。", en: "Application refused. Check your messages." },
+  FD4: { zh: "申请已撤回，请查看消息。", en: "Application withdrawn." },
+  FD5: { zh: "申请已取消，请查看消息。", en: "Application cancelled. Check your messages." },
+  PS0: { zh: "档案处理中", en: "Profile in progress" },
+};
+
+const irccMessageTagMap: Record<string, { zh: string; en: string }> = {
+  "Online.RECEIPT": { zh: "在线申请提交收据", en: "Online application receipt" },
+  CorrespondenceSent: { zh: "IRCC 已发送信件", en: "IRCC correspondence sent" },
+};
+
+function stripHtmlText(value: unknown): string {
+  const raw = String(value ?? "");
+  return raw
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatIrccCode(value: string, languageMode: LanguageMode): string {
+  if (!value) {
+    return "-";
+  }
+  const mapped = irccStatusCodeMap[value];
+  if (!mapped) {
+    return `${languageMode === "zh" ? "未知状态码" : "Unknown status code"}：${value}`;
+  }
+  return `${mapped[languageMode]}（${value}）`;
+}
+
+function formatIrccMessageTag(value: unknown, languageMode: LanguageMode): string {
+  const tag = String(value ?? "");
+  if (!tag) {
+    return languageMode === "zh" ? "申请消息" : "Message";
+  }
+  return irccMessageTagMap[tag]?.[languageMode] ?? tag;
+}
+
+function readIrccStatus(status: unknown, languageMode: LanguageMode): string {
   if (typeof status === "string") {
-    return status || "-";
+    return formatIrccCode(status, languageMode);
   }
   if (status && typeof status === "object" && "status" in status) {
     const value = String((status as { status?: unknown }).status ?? "");
     const timeStamp = String((status as { timeStamp?: unknown }).timeStamp ?? "");
-    return `${value || "-"}${timeStamp ? ` · ${timeStamp}` : ""}`;
+    return `${formatIrccCode(value, languageMode)}${timeStamp ? ` · ${formatTime(timeStamp, languageMode)}` : ""}`;
   }
   return status == null || status === "" ? "-" : JSON.stringify(status);
 }
@@ -2547,6 +2633,37 @@ function IrccCaseDetail(props: {
   const applicationInfo = snapshot?.applicationInfo ?? {};
   const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
   const applicant = getIrccApplicant(snapshot);
+  const statusLabels = props.languageMode === "zh"
+    ? {
+        eligibility: "资格审查",
+        medical: "体检结果",
+        additionalDocuments: "补充文件",
+        interview: "面试",
+        biometrics: "指纹/生物信息",
+        backgroundCheck: "背景调查",
+        finalDecision: "最终决定",
+        ghostUpdate: "Ghost update",
+        principalApplicant: "主申请人",
+        applicationNumber: "Application number",
+        dateReceived: "接收日期",
+        biometricsNumber: "指纹编号",
+        biometricsExpiry: "指纹有效期",
+      }
+    : {
+        eligibility: "Review of eligibility",
+        medical: "Review of medical results",
+        additionalDocuments: "Review of additional documents",
+        interview: "Interview",
+        biometrics: "Biometrics",
+        backgroundCheck: "Background check",
+        finalDecision: "Final decision",
+        ghostUpdate: "Ghost update",
+        principalApplicant: "Principal applicant",
+        applicationNumber: "Application number",
+        dateReceived: "Date received",
+        biometricsNumber: "Biometrics number",
+        biometricsExpiry: "Biometrics expiry",
+      };
   return (
     <>
       <section className="panel">
@@ -2610,23 +2727,23 @@ function IrccCaseDetail(props: {
       <section className="panel">
         <div className="panel-title">
           <h2 className="subhead">{props.t("irccApplicationStatus")}</h2>
-          <span className="status-badge">{readIrccStatus(appStatus.applicationStatus) || props.t("noStatus")}</span>
+          <span className="status-badge">{readIrccStatus(appStatus.applicationStatus, props.languageMode) || props.t("noStatus")}</span>
         </div>
         <div className="two-col metric-grid">
-          <Metric label="Review of eligibility" value={readIrccStatus(appStatus.eligibility)} />
-          <Metric label="Review of medical results" value={readIrccStatus(appStatus.medical)} />
+          <Metric label={statusLabels.eligibility} value={readIrccStatus(appStatus.eligibility, props.languageMode)} />
+          <Metric label={statusLabels.medical} value={readIrccStatus(appStatus.medical, props.languageMode)} />
         </div>
         <div className="two-col metric-grid">
-          <Metric label="Review of additional documents" value={readIrccStatus(appStatus.additionalDocuments)} />
-          <Metric label="Interview" value={readIrccStatus(appStatus.interviewOrAppointment)} />
+          <Metric label={statusLabels.additionalDocuments} value={readIrccStatus(appStatus.additionalDocuments, props.languageMode)} />
+          <Metric label={statusLabels.interview} value={readIrccStatus(appStatus.interviewOrAppointment, props.languageMode)} />
         </div>
         <div className="two-col metric-grid">
-          <Metric label="Biometrics" value={readIrccStatus(appStatus.biometricInformation)} />
-          <Metric label="Background check" value={readIrccStatus(appStatus.backgroundChecks)} />
+          <Metric label={statusLabels.biometrics} value={readIrccStatus(appStatus.biometricInformation, props.languageMode)} />
+          <Metric label={statusLabels.backgroundCheck} value={readIrccStatus(appStatus.backgroundChecks, props.languageMode)} />
         </div>
         <div className="two-col metric-grid">
-          <Metric label="Final decision" value={readIrccStatus(appStatus.finalDecision)} />
-          <Metric label="Ghost update" value={applicationInfo.updatedTimestamp || applicationInfo.updatedDate ? formatTime(String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate), props.languageMode) : "-"} />
+          <Metric label={statusLabels.finalDecision} value={readIrccStatus(appStatus.finalDecision, props.languageMode)} />
+          <Metric label={statusLabels.ghostUpdate} value={applicationInfo.updatedTimestamp || applicationInfo.updatedDate ? formatTime(String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate), props.languageMode) : "-"} />
         </div>
         <p className="form-intro compact">{props.t("irccGhostUpdate")}</p>
       </section>
@@ -2637,16 +2754,16 @@ function IrccCaseDetail(props: {
           <UserRound size={18} />
         </div>
         <div className="two-col metric-grid">
-          <Metric label="Principal applicant" value={String(applicant.fullName || props.targetCase.principalApplicant || "-")} />
+          <Metric label={statusLabels.principalApplicant} value={String(applicant.fullName || props.targetCase.principalApplicant || "-")} />
           <Metric label="UCI" value={String(applicant.uci || "-")} />
         </div>
         <div className="two-col metric-grid">
-          <Metric label="Application number" value={String(applicant.appNumber || props.targetCase.applicationNumber || "-")} />
-          <Metric label="Date received" value={String(applicant.receivedDate || "-")} />
+          <Metric label={statusLabels.applicationNumber} value={String(applicant.appNumber || props.targetCase.applicationNumber || "-")} />
+          <Metric label={statusLabels.dateReceived} value={String(applicant.receivedDate || "-")} />
         </div>
         <div className="two-col metric-grid">
-          <Metric label="Biometrics number" value={String(applicant.biometricNumber || "-")} />
-          <Metric label="Biometrics expiry" value={String(applicant.biometricExpiryDate || "-")} />
+          <Metric label={statusLabels.biometricsNumber} value={String(applicant.biometricNumber || "-")} />
+          <Metric label={statusLabels.biometricsExpiry} value={String(applicant.biometricExpiryDate || "-")} />
         </div>
       </section>
 
@@ -2659,13 +2776,14 @@ function IrccCaseDetail(props: {
           {messages.map((message, index) => {
             const details = typeof message.messageDetails === "object" && message.messageDetails ? message.messageDetails as Record<string, unknown> : {};
             const attachment = typeof details.attachment === "object" && details.attachment ? details.attachment as Record<string, unknown> : {};
+            const subject = stripHtmlText(details.subject) || stripHtmlText(attachment.attachmentFileName) || "-";
             return (
               <div key={String(message.messageId ?? index)} className="timeline-item">
                 <div className="timeline-header">
                   <span className="timeline-time">{formatTime(String(message.updatedDttm || message.createdDttm || ""), props.languageMode)}</span>
-                  <span className="status-badge">{String(details.messageTag || details.messageType || "Message")}</span>
+                  <span className="status-badge">{formatIrccMessageTag(details.messageTag || details.messageType, props.languageMode)}</span>
                 </div>
-                <div className="timeline-desc">{String(details.subject || attachment.attachmentFileName || "-")}</div>
+                <div className="timeline-desc">{subject}</div>
               </div>
             );
           })}
@@ -3079,7 +3197,7 @@ function AdminPanel(props: {
   scheduledQueryJobs: AdminScheduledQueryJob[];
   finishedQueryJobs: AdminFinishedQueryJob[];
   securityEvents: SecurityEvent[];
-  cases: CeacCase[];
+  cases: AdminCase[];
   reload: () => Promise<void>;
   t: (key: TranslationKey) => string;
   languageMode: LanguageMode;
@@ -3104,7 +3222,7 @@ function AdminPanel(props: {
     return () => window.clearInterval(timer);
   }, []);
   const casesByUserId = useMemo(() => {
-    const grouped = new Map<number, CeacCase[]>();
+    const grouped = new Map<number, AdminCase[]>();
     for (const item of props.cases) {
       grouped.set(item.userId, [...(grouped.get(item.userId) ?? []), item]);
     }
@@ -3294,10 +3412,15 @@ function AdminPanel(props: {
                     </div>
                     <div className="case-list compact">
                       {ownedCases.map((item) => (
-                        <div key={item.id} className="admin-case-row">
+                        <div key={item.adminCaseKey ?? `${item.profileType ?? "ceac"}-${item.id}`} className="admin-case-row">
                           <span>{item.displayName}</span>
+                          <span className={`status-badge ${item.profileType === "ircc" ? "success" : ""}`}>
+                            {item.profileType === "ircc" ? props.t("countryCanada") : props.t("countryUnitedStates")}
+                          </span>
                           <span className="mono-text">{item.applicationNum}</span>
-                          <span className={getStatusBadgeClass(item.lastStatus)}>{item.lastStatus ?? props.t("waitFirstQuery")}</span>
+                          <span className={item.profileType === "ircc" ? "case-meta" : getStatusBadgeClass(item.lastStatus)}>
+                            {item.lastStatus ?? props.t("waitFirstQuery")}
+                          </span>
                           {item.passportSlotMonitor && (
                             <>
                               <span className={`status-badge ${item.passportSlotMonitor.isEnabled ? "success" : ""}`}>
@@ -3314,7 +3437,7 @@ function AdminPanel(props: {
                               )}
                             </>
                           )}
-                          {item.ceacAutoLockedByPassportSlot && (
+                          {item.profileType !== "ircc" && item.ceacAutoLockedByPassportSlot && (
                             <button
                               type="button"
                               className="button secondary compact-button"
