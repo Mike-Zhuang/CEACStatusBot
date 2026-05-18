@@ -65,7 +65,8 @@ def computeNextPassportSlotCheckAt(
         minutes = random.randint(10, 20)
         return (base + timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
     if slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT:
-        return (base + timedelta(hours=1)).replace(microsecond=0).isoformat()
+        minutes = random.randint(50, 70)
+        return (base + timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
     if slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT:
         return computeNextNoSlotCheckAt(base).isoformat()
     minutes = random.randint(1, 30)
