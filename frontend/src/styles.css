@@ -1190,16 +1190,20 @@ select:focus {
 }
 
 .admin-country-badge {
-  display: inline-grid;
-  place-items: center;
-  width: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 56px;
+  max-width: 100%;
   min-height: 26px;
-  padding: 0 8px;
+  padding: 0 10px;
   border-radius: 999px;
   border: 1px solid var(--hairline);
   background: var(--canvas);
   color: var(--ink-muted);
   font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
 }
 

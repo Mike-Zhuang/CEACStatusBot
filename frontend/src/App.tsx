@@ -2868,6 +2868,72 @@ const irccMessageTagMap: Record<string, { zh: string; en: string }> = {
   CorrespondenceSent: { zh: "IRCC 已发送信件", en: "IRCC correspondence sent" },
 };
 
+const irccChangeLabelMap: Record<string, string> = {
+  "总申请状态": "Overall application status",
+  "首页申请状态": "Home page status",
+  "详情更新时间": "Detail updated time",
+  "首页更新时间": "Home updated time",
+  "资格审查": "Eligibility review",
+  "体检结果": "Medical results",
+  "补充文件": "Additional documents",
+  "面试/预约": "Interview/appointment",
+  "指纹/生物信息": "Biometrics",
+  "背景调查": "Background check",
+  "最终决定": "Final decision",
+  "档案状态": "Profile status",
+  "处理时间标题": "Processing time title",
+  "处理时间说明": "Processing time message",
+  "预计完成日期": "Estimated completion date",
+  "预计剩余处理时间": "Estimated remaining processing time",
+  "是否超过处理时间": "Processing time exceeded",
+  "文件状态": "Document status",
+  "申请人信息": "Applicant information",
+  "申请消息": "Application messages",
+};
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function translateKnownIrccStatusText(value: string): string {
+  let output = value;
+  const entries = Object.entries(irccStatusCodeMap)
+    .filter(([, mapped]) => mapped.zh && mapped.en)
+    .sort(([, a], [, b]) => b.zh.length - a.zh.length);
+  for (const [code, mapped] of entries) {
+    output = output.replace(new RegExp(`${escapeRegExp(mapped.zh)}（${escapeRegExp(code)}）`, "g"), `${mapped.en} (${code})`);
+    output = output.replace(new RegExp(escapeRegExp(mapped.zh), "g"), mapped.en);
+  }
+  return output;
+}
+
+function translateIrccChangeSummary(value: string, languageMode: LanguageMode): string {
+  const withLocalTimes = formatInlineTimes(value, languageMode);
+  if (languageMode === "zh") {
+    return withLocalTimes;
+  }
+
+  let output = translateKnownIrccStatusText(withLocalTimes)
+    .replace(/首次记录 IRCC Portal 快照。/g, "First IRCC Portal snapshot recorded.")
+    .replace(/快照指纹变化，但未生成字段级摘要。/g, "Snapshot fingerprint changed, but no field-level summary was generated.")
+    .replace(/Ghost update：首页更新时间从 (.*?) 变为 (.*?)。/g, "Ghost update: home updated time changed from $1 to $2.")
+    .replace(/申请消息发生变化：(\d+) 条 -> (\d+) 条。/g, "Application messages changed: $1 -> $2 message(s).");
+
+  for (const [zhLabel, enLabel] of Object.entries(irccChangeLabelMap).sort((a, b) => b[0].length - a[0].length)) {
+    output = output.replace(new RegExp(escapeRegExp(zhLabel), "g"), enLabel);
+  }
+
+  return output
+    .replace(/ 发生变化：/g, " changed: ")
+    .replace(/(\d+) 条/g, "$1 message(s)")
+    .replace(/。/g, ".")
+    .replace(/；/g, "; ")
+    .replace(/，/g, ", ")
+    .replace(/：/g, ": ")
+    .replace(/（/g, "(")
+    .replace(/）/g, ")");
+}
+
 function stripHtmlText(value: unknown): string {
   const raw = String(value ?? "");
   return raw
@@ -2893,7 +2959,7 @@ function formatIrccCode(value: string, languageMode: LanguageMode): string {
   if (!mapped[languageMode]) {
     return "-";
   }
-  return `${mapped[languageMode]}（${value}）`;
+  return languageMode === "zh" ? `${mapped[languageMode]}（${value}）` : `${mapped[languageMode]} (${value})`;
 }
 
 function formatIrccBoolean(value: unknown, languageMode: LanguageMode): string {
@@ -3212,7 +3278,7 @@ function IrccCaseDetail(props: {
                 <span className="timeline-time">{formatTime(record.fetchedAt, props.languageMode)}</span>
                 <span className={`status-badge ${record.notificationSent ? "success" : ""}`}>{record.notificationSent ? props.t("notificationSent") : props.t("notificationNotSent")}</span>
               </div>
-              <div className="timeline-desc">{formatInlineTimes(record.changeSummary, props.languageMode)}</div>
+              <div className="timeline-desc">{translateIrccChangeSummary(record.changeSummary, props.languageMode)}</div>
             </div>
           ))}
           {props.history.length === 0 && <p className="empty-state">{props.t("irccNoHistory")}</p>}
@@ -4088,7 +4154,9 @@ function AdminPanel(props: {
                             </td>
                             <td className="mono-text">{run.duration_ms}ms</td>
                             <td>
-                              {(run.profile_type === "ircc" || run.profile_type === "passport_slot") && run.status ? (
+                              {run.profile_type === "ircc" && run.status ? (
+                                <span className="admin-ircc-summary">{translateIrccChangeSummary(run.status, props.languageMode)}</span>
+                              ) : run.profile_type === "passport_slot" && run.status ? (
                                 <span className="admin-ircc-summary">{formatInlineTimes(run.status, props.languageMode)}</span>
                               ) : run.status ? (
                                 <span className={getStatusBadgeClass(run.status)}>{run.status}</span>
@@ -4116,7 +4184,9 @@ function AdminPanel(props: {
                             <Metric label={props.t("lastCheckMode")} value={formatTriggerType(run.trigger_type, props.t)} />
                             <Metric label={props.t("duration")} value={`${run.duration_ms}ms`} />
                             <Metric label={props.t("changeContent")}>
-                              {(run.profile_type === "ircc" || run.profile_type === "passport_slot") && run.status ? (
+                              {run.profile_type === "ircc" && run.status ? (
+                                <span className="admin-ircc-summary">{translateIrccChangeSummary(run.status, props.languageMode)}</span>
+                              ) : run.profile_type === "passport_slot" && run.status ? (
                                 <span className="admin-ircc-summary">{formatInlineTimes(run.status, props.languageMode)}</span>
                               ) : run.status ? (
                                 <span className={getStatusBadgeClass(run.status, "metric-status")}>{run.status}</span>
