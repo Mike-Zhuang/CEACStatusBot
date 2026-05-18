@@ -520,6 +520,7 @@ def sendPassportSlotNotification(
     slotLines: list[str],
     rawSummary: str,
     autoStopped: bool = False,
+    slotListChanged: bool = False,
     connection: Any | None = None,
 ) -> None:
     sendPassportSlotStatusEmail(
@@ -535,6 +536,7 @@ def sendPassportSlotNotification(
         hasSlots=slotStatus == "has_slot",
         isTest=False,
         autoStopped=autoStopped,
+        slotListChanged=slotListChanged,
         connection=connection,
     )
 
@@ -553,9 +555,12 @@ def sendPassportSlotStatusEmail(
     hasSlots: bool,
     isTest: bool = False,
     autoStopped: bool = False,
+    slotListChanged: bool = False,
     connection: Any | None = None,
 ) -> None:
     subject = f"[GTS] 发现可预约时间：{case['display_name']}"
+    if slotListChanged:
+        subject = f"[GTS] 可预约时间有变化：{case['display_name']}"
     if slotStatus == "no_slot":
         subject = f"[GTS] 护照已可预约但暂无 slot：{case['display_name']}"
     elif slotStatus == "not_eligible":
@@ -564,7 +569,7 @@ def sendPassportSlotStatusEmail(
         subject = f"[GTS] 护照预约监控已自动停止：{case['display_name']}"
     if isTest:
         subject = f"[GTS] 护照预约监控测试：{case['display_name']}"
-    statusLabel = statusMessage or ("发现可预约时间" if hasSlots else "暂无可预约时间")
+    statusLabel = statusMessage or ("可预约时间有变化" if slotListChanged else "发现可预约时间" if hasSlots else "暂无可预约时间")
     appEntry = getSettings().appBaseUrl
     queryTime = formatCaseEmailTime(case, fetchedAt, connection)
     lines = [
@@ -577,12 +582,12 @@ def sendPassportSlotStatusEmail(
     ]
     if hasSlots:
         lines.append("")
-        lines.append("当前可预约时间：")
+        lines.append("更新后的可预约时间：" if slotListChanged else "当前可预约时间：")
         lines.extend(slotLines or ["接口返回了可用 slot，但未能解析为标准日期 / 时间字段。"])
         lines.extend(
             [
                 "",
-                "系统已将该档案的 slot 自动查询放缓到约每小时一次，并且不会再参与零点加频。",
+                "系统已将该档案的 slot 自动查询放缓到随机 50-70 分钟一次，并且不会再参与零点加频。",
                 "如果你已经在 GTS 官网预约成功，请回到站内档案详情页点击“我已预约，停止监控”。",
             ],
         )

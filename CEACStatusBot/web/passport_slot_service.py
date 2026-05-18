@@ -530,12 +530,21 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
     )
     if shouldAutoStopMonitor:
         statusMessage = "GTS 已不再返回可预约资格，系统判断预约资格可能已结束，并已自动停止护照预约监控。"
+    slotListChanged = (
+        success
+        and changed
+        and slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT
+        and previousSlotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT
+    )
+    if slotListChanged:
+        statusMessage = "可预约时间列表发生变化。"
     if success:
         result["slotStatus"] = slotStatus
         result["statusMessage"] = statusMessage or formatSlotStatus(slotStatus)
         result["slotFingerprint"] = fingerprint
         result["hasSlotStableCount"] = hasSlotStableCount
         result["autoStopped"] = shouldAutoStopMonitor
+        result["slotListChanged"] = slotListChanged
     shouldNotify = (
         success
         and bool(row["email_notifications_enabled"])
@@ -568,6 +577,7 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
                     slotLines=formatSlotLines(slots),
                     rawSummary="",
                     autoStopped=shouldAutoStopMonitor,
+                    slotListChanged=slotListChanged,
                     connection=connection,
                 )
                 notificationSent = True

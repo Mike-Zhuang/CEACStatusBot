@@ -1132,7 +1132,17 @@ def adminQueryRuns(_: dict = Depends(adminDependency)) -> dict:
                             SELECT
                                 CASE
                                     WHEN h.slot_fingerprint LIKE 'state:has_slot:%'
-                                        THEN 'slot 结果变化：发现可预约时间（' || h.slot_count || ' 个日期）'
+                                        THEN CASE
+                                            WHEN EXISTS (
+                                                SELECT 1
+                                                FROM passport_slot_history previous_h
+                                                WHERE previous_h.case_id = h.case_id
+                                                  AND previous_h.id < h.id
+                                                  AND previous_h.slot_fingerprint LIKE 'state:has_slot:%'
+                                            )
+                                                THEN 'slot 结果变化：可预约时间有变化（' || h.slot_count || ' 个日期）'
+                                            ELSE 'slot 结果变化：发现可预约时间（' || h.slot_count || ' 个日期）'
+                                        END
                                     WHEN h.slot_fingerprint = 'state:not_eligible'
                                         THEN CASE
                                             WHEN h.notification_sent = 1
