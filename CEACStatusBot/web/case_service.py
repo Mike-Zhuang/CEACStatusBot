@@ -644,7 +644,7 @@ def sendCurrentStatusEmail(caseId: int, userId: int | None = None) -> dict[str, 
         "application_num_origin": case["application_num"],
     }
     try:
-        sendCaseNotification(case, smtpConfig, result)
+        sendCaseNotification(case, smtpConfig, result, isTest=True)
     except Exception as exc:
         return {"success": False, "error": str(exc)}
     return {"success": True, "error": ""}

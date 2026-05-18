@@ -405,8 +405,10 @@ def saveSystemSmtpConfig(*, fromEmail: str, host: str, port: int, useSsl: bool, 
     return getSystemSmtpConfigPublic()
 
 
-def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, result: dict[str, Any], connection: Any | None = None) -> None:
+def sendCaseNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, result: dict[str, Any], connection: Any | None = None, *, isTest: bool = False) -> None:
     subject = f"[CEAC] {case['application_num']} 状态更新：{result['status']}"
+    if isTest:
+        subject = f"[CEAC] {case['application_num']} 测试邮件：当前状态 {result['status']}"
     lines = [
         f"档案：{case['display_name']}",
         f"申请号：{case['application_num']}",
