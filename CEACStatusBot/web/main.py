@@ -1127,10 +1127,37 @@ def adminQueryRuns(_: dict = Depends(adminDependency)) -> dict:
                     r.finished_at,
                     r.trigger_type,
                     r.success,
-                    s.status,
+                    CASE
+                        WHEN r.trigger_type LIKE 'passport_slot_%' THEN (
+                            SELECT
+                                CASE
+                                    WHEN h.slot_fingerprint LIKE 'state:has_slot:%'
+                                        THEN 'slot 结果变化：发现可预约时间（' || h.slot_count || ' 个日期）'
+                                    WHEN h.slot_fingerprint = 'state:not_eligible'
+                                        THEN CASE
+                                            WHEN h.notification_sent = 1
+                                                THEN 'slot 结果变化：预约资格可能已结束，已自动停止监控'
+                                            ELSE 'slot 结果变化：暂不具备护照预约资格'
+                                        END
+                                    WHEN h.slot_fingerprint = 'state:no_slot' OR h.slot_fingerprint = 'empty'
+                                        THEN 'slot 结果变化：当前暂无 slot'
+                                    ELSE 'slot 结果变化：' || h.slot_fingerprint
+                                END
+                            FROM passport_slot_history h
+                            WHERE h.case_id = c.id
+                              AND h.fetched_at >= r.started_at
+                              AND h.fetched_at <= r.finished_at
+                            ORDER BY h.id DESC
+                            LIMIT 1
+                        )
+                        ELSE s.status
+                    END AS status,
                     r.error_message,
                     r.duration_ms,
-                    'ceac' AS profile_type
+                    CASE
+                        WHEN r.trigger_type LIKE 'passport_slot_%' THEN 'passport_slot'
+                        ELSE 'ceac'
+                    END AS profile_type
                 FROM query_runs r
                 JOIN ceac_cases c ON c.id = r.case_id
                 JOIN users u ON u.id = c.user_id

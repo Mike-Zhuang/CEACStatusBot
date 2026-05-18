@@ -519,6 +519,7 @@ def sendPassportSlotNotification(
     statusMessage: str,
     slotLines: list[str],
     rawSummary: str,
+    autoStopped: bool = False,
     connection: Any | None = None,
 ) -> None:
     sendPassportSlotStatusEmail(
@@ -533,6 +534,7 @@ def sendPassportSlotNotification(
         rawSummary=rawSummary,
         hasSlots=slotStatus == "has_slot",
         isTest=False,
+        autoStopped=autoStopped,
         connection=connection,
     )
 
@@ -550,6 +552,7 @@ def sendPassportSlotStatusEmail(
     rawSummary: str,
     hasSlots: bool,
     isTest: bool = False,
+    autoStopped: bool = False,
     connection: Any | None = None,
 ) -> None:
     subject = f"[GTS] 发现可预约时间：{case['display_name']}"
@@ -557,6 +560,8 @@ def sendPassportSlotStatusEmail(
         subject = f"[GTS] 护照已可预约但暂无 slot：{case['display_name']}"
     elif slotStatus == "not_eligible":
         subject = f"[GTS] 暂不具备护照预约资格：{case['display_name']}"
+    if autoStopped:
+        subject = f"[GTS] 护照预约监控已自动停止：{case['display_name']}"
     if isTest:
         subject = f"[GTS] 护照预约监控测试：{case['display_name']}"
     statusLabel = statusMessage or ("发现可预约时间" if hasSlots else "暂无可预约时间")
@@ -579,6 +584,14 @@ def sendPassportSlotStatusEmail(
                 "",
                 "系统已将该档案的 slot 自动查询放缓到约每小时一次，并且不会再参与零点加频。",
                 "如果你已经在 GTS 官网预约成功，请回到站内档案详情页点击“我已预约，停止监控”。",
+            ],
+        )
+    elif autoStopped:
+        lines.extend(
+            [
+                "系统检测到该 UID/HAL 从可预约阶段回到暂不具备预约资格。",
+                "这通常表示你可能已经完成预约，或 GTS 已关闭该 UID/HAL 的预约入口。",
+                "系统已自动停止该档案的 GTS 护照预约监控，避免继续无意义查询。",
             ],
         )
     elif slotStatus == "not_eligible":

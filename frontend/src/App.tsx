@@ -155,7 +155,7 @@ interface QueryRun {
   status: string | null;
   error_message: string;
   duration_ms: number;
-  profile_type?: "ceac" | "ircc";
+  profile_type?: "ceac" | "ircc" | "passport_slot";
 }
 
 interface AdminQueryJob {
@@ -4088,7 +4088,7 @@ function AdminPanel(props: {
                             </td>
                             <td className="mono-text">{run.duration_ms}ms</td>
                             <td>
-                              {run.profile_type === "ircc" && run.status ? (
+                              {(run.profile_type === "ircc" || run.profile_type === "passport_slot") && run.status ? (
                                 <span className="admin-ircc-summary">{formatInlineTimes(run.status, props.languageMode)}</span>
                               ) : run.status ? (
                                 <span className={getStatusBadgeClass(run.status)}>{run.status}</span>
@@ -4116,7 +4116,7 @@ function AdminPanel(props: {
                             <Metric label={props.t("lastCheckMode")} value={formatTriggerType(run.trigger_type, props.t)} />
                             <Metric label={props.t("duration")} value={`${run.duration_ms}ms`} />
                             <Metric label={props.t("changeContent")}>
-                              {run.profile_type === "ircc" && run.status ? (
+                              {(run.profile_type === "ircc" || run.profile_type === "passport_slot") && run.status ? (
                                 <span className="admin-ircc-summary">{formatInlineTimes(run.status, props.languageMode)}</span>
                               ) : run.status ? (
                                 <span className={getStatusBadgeClass(run.status, "metric-status")}>{run.status}</span>

@@ -521,16 +521,27 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
     changed = success and fingerprint != previousFingerprint
     previousStableCount = int(previousResult.get("hasSlotStableCount") or 0) if isinstance(previousResult, dict) else 0
     hasSlotStableCount = previousStableCount + 1 if success and slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT and previousSlotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT and not changed else 0
+    shouldAutoStopMonitor = (
+        success
+        and changed
+        and slotStatus == PASSPORT_SLOT_STATUS_NOT_ELIGIBLE
+        and previousSlotStatus in {PASSPORT_SLOT_STATUS_NO_SLOT, PASSPORT_SLOT_STATUS_HAS_SLOT}
+    )
+    if shouldAutoStopMonitor:
+        statusMessage = "GTS 已不再返回可预约资格，系统判断预约资格可能已结束，并已自动停止护照预约监控。"
     if success:
         result["slotStatus"] = slotStatus
         result["statusMessage"] = statusMessage or formatSlotStatus(slotStatus)
         result["slotFingerprint"] = fingerprint
         result["hasSlotStableCount"] = hasSlotStableCount
+        result["autoStopped"] = shouldAutoStopMonitor
     shouldNotify = (
         success
         and bool(row["email_notifications_enabled"])
         and (
             (slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT and previousSlotStatus == PASSPORT_SLOT_STATUS_NOT_ELIGIBLE and changed)
+            or (slotStatus == PASSPORT_SLOT_STATUS_NO_SLOT and previousSlotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT and changed)
+            or shouldAutoStopMonitor
             or (slotStatus == PASSPORT_SLOT_STATUS_HAS_SLOT and (previousSlotStatus in {PASSPORT_SLOT_STATUS_UNKNOWN, PASSPORT_SLOT_STATUS_NO_SLOT} or changed))
         )
     )
@@ -555,6 +566,7 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
                     statusMessage=statusMessage or formatSlotStatus(slotStatus),
                     slotLines=formatSlotLines(slots),
                     rawSummary="",
+                    autoStopped=shouldAutoStopMonitor,
                     connection=connection,
                 )
                 notificationSent = True
@@ -588,7 +600,7 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
                 changed=changed,
                 hasSlotStableCount=hasSlotStableCount,
             )
-            if bool(row["is_enabled"])
+            if bool(row["is_enabled"]) and not shouldAutoStopMonitor
             else None
         )
         if success and slotStatus in {PASSPORT_SLOT_STATUS_NO_SLOT, PASSPORT_SLOT_STATUS_HAS_SLOT}:
@@ -606,12 +618,13 @@ def runPassportSlotQuery(caseId: int, triggerType: str = "passport_slot_automati
         connection.execute(
             """
             UPDATE passport_slot_monitors
-            SET last_checked_at = ?, next_check_at = ?, last_slot_fingerprint = ?,
+            SET last_checked_at = ?, is_enabled = ?, next_check_at = ?, last_slot_fingerprint = ?,
                 last_slot_count = ?, last_result_json = ?, last_error_message = ?, updated_at = ?
             WHERE id = ?
             """,
             (
                 finishedIso,
+                0 if shouldAutoStopMonitor else int(row["is_enabled"]),
                 nextCheckAt,
                 fingerprint if success else previousFingerprint,
                 len(slots) if success else int(row["last_slot_count"]),
