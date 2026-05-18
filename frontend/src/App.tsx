@@ -1207,10 +1207,10 @@ function formatTriggerType(value: CeacCase["lastTriggerType"] | QueryTriggerType
     return `${t("passportSlotMonitor")} · ${t("triggerAutomatic")}`;
   }
   if (value === "manual") {
-    return t("triggerManual");
+    return `CEAC 美签状态 · ${t("triggerManual")}`;
   }
   if (value === "automatic") {
-    return t("triggerAutomatic");
+    return `CEAC 美签状态 · ${t("triggerAutomatic")}`;
   }
   return t("triggerUnknown");
 }
