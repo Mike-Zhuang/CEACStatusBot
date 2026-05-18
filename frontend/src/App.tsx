@@ -35,6 +35,7 @@ interface User {
   role: "admin" | "user";
   account_tier: AccountTier;
   is_email_verified: number;
+  timezone: string;
   created_at: string;
 }
 
@@ -733,10 +734,9 @@ const translations = {
     queryInProgress: "Querying CEAC. Please wait.",
     pre2022Note: "NOTE: For applicants who completed their forms prior to January 1, 2022, please put NA into the Passport and Surname fields.",
     passportSlotMonitor: "Passport appointment monitor",
-    betaLabel: "Beta",
     passportSlotIntro: "Enter your UID or HAL after Approved or Issued to watch GTS appointment slots.",
     passportSlotEarlyHint: "You can configure this now, but GTS usually returns valid tokens after Approved or Issued.",
-    passportSlotDetectionOnly: "Beta: this monitor only detects GTS appointment slots returned by the official site and sends notifications. It does not automatically book, hold, or grab slots, and does not guarantee completeness, real-time accuracy, or booking success.",
+    passportSlotDetectionOnly: "This monitor detects GTS appointment slots returned by the official site and sends notifications. It does not automatically book, hold, or grab slots, and does not guarantee completeness, real-time accuracy, or booking success.",
     passportSlotIdentifier: "UID or HAL",
     passportSlotIdentifierPlaceholder: "106417002 or HAL0123456789",
     passportSlotSave: "Save monitor",
@@ -977,10 +977,9 @@ const translations = {
     queryInProgress: "正在查询 CEAC，请稍候。",
     pre2022Note: "注意：如果你在 2022 年 1 月 1 日之前完成表格，请在护照号码和姓氏字段填写 NA。",
     passportSlotMonitor: "护照预约监控",
-    betaLabel: "Beta",
     passportSlotIntro: "Approved 或 Issued 后填写 UID/HAL，系统会轮询 GTS 可预约时间。",
     passportSlotEarlyHint: "你可以提前配置；但 GTS 通常在 Approved 或 Issued 后才会返回有效 token。",
-    passportSlotDetectionOnly: "Beta：本功能只负责检测 GTS 官网返回的可预约 slot 并发送提醒，不支持自动预约、占位或抢 slot，也不保证结果完整、实时一致或一定预约成功。",
+    passportSlotDetectionOnly: "本功能只负责检测 GTS 官网返回的可预约 slot 并发送提醒，不支持自动预约、占位或抢 slot，也不保证结果完整、实时一致或一定预约成功。",
     passportSlotIdentifier: "UID 或 HAL",
     passportSlotIdentifierPlaceholder: "106417002 或 HAL0123456789",
     passportSlotSave: "保存监控",
@@ -1074,6 +1073,14 @@ async function requestJson<T>(path: string, options: RequestInit = {}): Promise<
     throw new Error(payload.detail ?? "Request failed");
   }
   return payload as T;
+}
+
+function getBrowserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
 }
 
 async function waitForQueryJob(
@@ -1315,6 +1322,22 @@ export function App() {
     setMessage(text ? { scope, text } : null);
   }
 
+  async function syncBrowserTimezone(nextUser: User) {
+    const timezone = getBrowserTimezone();
+    if (!timezone || nextUser.timezone === timezone) {
+      return;
+    }
+    try {
+      const payload = await requestJson<{ user: User }>("/api/me/timezone", {
+        method: "PATCH",
+        body: JSON.stringify({ timezone }),
+      });
+      setUser(payload.user);
+    } catch {
+      // 时区只影响邮件展示，不应阻塞登录和主流程。
+    }
+  }
+
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
     localStorage.setItem("themeMode", themeMode);
@@ -1329,6 +1352,7 @@ export function App() {
     requestJson<{ user: User }>("/api/me")
       .then((payload) => {
         setUser(payload.user);
+        void syncBrowserTimezone(payload.user);
         setProfileForm((current) => ({ ...current, email: payload.user.email }));
         setCaseForm((current) => current.receiveEmail ? current : createEmptyCaseForm(payload.user.email));
         setIrccCaseForm((current) => current.receiveEmail ? current : createEmptyIrccCaseForm(payload.user.email));
@@ -1595,6 +1619,7 @@ export function App() {
         localStorage.removeItem("rememberedPassword");
       }
       setUser(payload.user);
+      void syncBrowserTimezone(payload.user);
       setAcceptedTerms(false);
       setProfileForm({ email: payload.user.email, currentPassword: "", newPassword: "", confirmPassword: "" });
       setCaseForm((current) => current.receiveEmail ? current : createEmptyCaseForm(payload.user.email));
@@ -1658,6 +1683,7 @@ export function App() {
         }),
       });
       setUser(payload.user);
+      void syncBrowserTimezone(payload.user);
       setProfileForm({ email: payload.user.email, currentPassword: "", newPassword: "", confirmPassword: "" });
       localStorage.setItem("rememberedEmail", payload.user.email);
       showMessage(t("profileSaved"));
@@ -3362,7 +3388,6 @@ function PassportSlotMonitorPanel(props: {
         <div>
           <h2 className="subhead inline-title">
             {props.t("passportSlotMonitor")}
-            <span className="beta-badge">{props.t("betaLabel")}</span>
           </h2>
           <p className="form-intro">
             {isReadyStatus ? props.t("passportSlotIntro") : props.t("passportSlotEarlyHint")}

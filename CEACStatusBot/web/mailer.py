@@ -8,6 +8,7 @@ import re
 from smtplib import SMTP, SMTP_SSL
 from typing import Any
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import getSettings
 from .database import getConnection, utcNowIso
@@ -19,6 +20,62 @@ class DailyEmailLimitExceeded(RuntimeError):
 
 
 SUPPORT_IMAGE_CONTENT_ID = "ceacstatusbot-support-qr"
+DEFAULT_EMAIL_TIMEZONE = "Asia/Shanghai"
+ISO_TIME_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
+
+
+def resolveEmailTimezone(timezoneName: str | None) -> str:
+    candidate = (timezoneName or "").strip() or DEFAULT_EMAIL_TIMEZONE
+    try:
+        ZoneInfo(candidate)
+    except ZoneInfoNotFoundError:
+        return DEFAULT_EMAIL_TIMEZONE
+    return candidate
+
+
+def getUserEmailTimezone(userId: int | None, connection: Any | None = None) -> str:
+    if userId is None:
+        return DEFAULT_EMAIL_TIMEZONE
+    if connection is not None:
+        row = connection.execute("SELECT timezone FROM users WHERE id = ?", (userId,)).fetchone()
+        return resolveEmailTimezone(row["timezone"] if row else "")
+    with getConnection() as localConnection:
+        row = localConnection.execute("SELECT timezone FROM users WHERE id = ?", (userId,)).fetchone()
+    return resolveEmailTimezone(row["timezone"] if row else "")
+
+
+def parseEmailTime(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            return datetime.fromisoformat(f"{text[:-1]}+00:00")
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed
+    except ValueError:
+        return None
+
+
+def formatEmailTime(value: str, timezoneName: str | None = None) -> str:
+    parsed = parseEmailTime(value)
+    if parsed is None:
+        return str(value or "")
+    localTime = parsed.astimezone(ZoneInfo(resolveEmailTimezone(timezoneName)))
+    return localTime.strftime("%Y/%m/%d %H:%M:%S %Z")
+
+
+def formatCaseEmailTime(case: dict[str, Any], value: str, connection: Any | None = None) -> str:
+    timezoneName = getUserEmailTimezone(int(case["user_id"]) if case.get("user_id") is not None else None, connection)
+    return formatEmailTime(value, timezoneName)
+
+
+def formatEmailTextTimes(text: str, timezoneName: str | None = None) -> str:
+    if not text:
+        return ""
+    return ISO_TIME_PATTERN.sub(lambda match: formatEmailTime(match.group(0), timezoneName), text)
 
 
 def isKeyValueLine(line: str) -> bool:
@@ -504,11 +561,12 @@ def sendPassportSlotStatusEmail(
         subject = f"[GTS] 护照预约监控测试：{case['display_name']}"
     statusLabel = statusMessage or ("发现可预约时间" if hasSlots else "暂无可预约时间")
     appEntry = getSettings().appBaseUrl
+    queryTime = formatCaseEmailTime(case, fetchedAt, connection)
     lines = [
         f"档案：{case['display_name']}",
         f"申请号：{case['application_num']}",
         f"UID/HAL：{identifierFull or identifierMasked}",
-        f"查询时间：{fetchedAt}",
+        f"查询时间：{queryTime}",
         "",
         f"当前状态：{statusLabel}",
     ]
@@ -552,12 +610,13 @@ def sendPassportSlotStatusEmail(
 
 def sendIssuedAutoStopNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None, issuedAt: str, connection: Any | None = None) -> None:
     subject = f"[CEAC] {case['application_num']} 已自动停止查询"
+    issuedTime = formatCaseEmailTime(case, issuedAt, connection)
     body = "\n".join(
         [
             f"档案：{case['display_name']}",
             f"申请号：{case['application_num']}",
             "状态：Issued",
-            f"首次记录 Issued 时间：{issuedAt}",
+            f"首次记录 Issued 时间：{issuedTime}",
             "",
             "该档案进入 Issued 已超过一周，且你尚未在站内停止自动查询。",
             "系统已按策略自动关闭该档案的自动查询，避免继续请求 CEAC。",

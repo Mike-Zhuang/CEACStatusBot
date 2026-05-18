@@ -128,7 +128,7 @@ def getCurrentUser(request: Request) -> dict[str, Any]:
     with getConnection() as connection:
         session = connection.execute(
             """
-            SELECT s.*, u.id, u.email, u.role, u.account_tier, u.is_email_verified, u.created_at
+            SELECT s.*, u.id, u.email, u.role, u.account_tier, u.is_email_verified, u.timezone, u.created_at
             FROM user_sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ?
@@ -157,6 +157,7 @@ def getCurrentUser(request: Request) -> dict[str, Any]:
         "role": session["role"],
         "account_tier": session["account_tier"],
         "is_email_verified": session["is_email_verified"],
+        "timezone": session["timezone"],
         "created_at": session["created_at"],
     }
     enforceAuthenticatedApiLimit(request, user)

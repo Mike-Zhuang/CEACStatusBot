@@ -68,6 +68,7 @@ from .schemas import (
     RegisterRequest,
     SendCodeRequest,
     SystemSmtpConfigInput,
+    TimezoneUpdateRequest,
     WorkerPriorityPatch,
 )
 from .security import (
@@ -616,7 +617,7 @@ def register(payload: RegisterRequest, request: Request, response: Response) -> 
         )
         connection.execute("UPDATE email_verification_codes SET used_at = ? WHERE id = ?", (nowIso, codeRow["id"]))
         user = connection.execute(
-            "SELECT id, email, role, account_tier, is_email_verified, created_at FROM users WHERE id = ?",
+            "SELECT id, email, role, account_tier, is_email_verified, timezone, created_at FROM users WHERE id = ?",
             (cursor.lastrowid,),
         ).fetchone()
     setSessionCookie(response, user, request)
@@ -646,6 +647,7 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict:
         "role": user["role"],
         "account_tier": user["account_tier"],
         "is_email_verified": user["is_email_verified"],
+        "timezone": user["timezone"],
         "created_at": user["created_at"],
     }
     setSessionCookie(response, publicUser, request)
@@ -696,7 +698,7 @@ def updateMe(payload: ProfileUpdateRequest, request: Request, response: Response
             (nextEmail, nextPasswordHash, nowIso, user["id"]),
         )
         publicUser = connection.execute(
-            "SELECT id, email, role, account_tier, is_email_verified, created_at FROM users WHERE id = ?",
+            "SELECT id, email, role, account_tier, is_email_verified, timezone, created_at FROM users WHERE id = ?",
             (user["id"],),
         ).fetchone()
     clearSessionCookie(response, request)
@@ -708,6 +710,21 @@ def updateMe(payload: ProfileUpdateRequest, request: Request, response: Response
         email=nextEmail,
         detail={"emailChanged": nextEmail != privateUser["email"], "passwordChanged": bool(payload.newPassword)},
     )
+    return {"user": publicUser}
+
+
+@app.patch("/api/me/timezone")
+def updateMyTimezone(payload: TimezoneUpdateRequest, user: dict = Depends(currentUserDependency)) -> dict:
+    nowIso = utcNowIso()
+    with getConnection() as connection:
+        connection.execute(
+            "UPDATE users SET timezone = ?, updated_at = ? WHERE id = ?",
+            (payload.timezone, nowIso, user["id"]),
+        )
+        publicUser = connection.execute(
+            "SELECT id, email, role, account_tier, is_email_verified, timezone, created_at FROM users WHERE id = ?",
+            (user["id"],),
+        ).fetchone()
     return {"user": publicUser}
 
 

@@ -51,6 +51,7 @@ def initializeDatabase() -> None:
                 terms_acceptance_ip_hash TEXT NOT NULL DEFAULT '',
                 terms_acceptance_device_hash TEXT NOT NULL DEFAULT '',
                 inactivity_notice_sent_at TEXT,
+                timezone TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -390,6 +391,10 @@ def initializeDatabase() -> None:
         if "inactivity_notice_sent_at" not in userColumns:
             connection.execute(
                 "ALTER TABLE users ADD COLUMN inactivity_notice_sent_at TEXT",
+            )
+        if "timezone" not in userColumns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT ''",
             )
         if "email_notifications_enabled" not in columns:
             connection.execute(

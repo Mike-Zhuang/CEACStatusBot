@@ -1,5 +1,6 @@
 import ipaddress
 import re
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -75,6 +76,20 @@ class ProfileUpdateRequest(SecureModel):
     email: EmailStr | None = None
     currentPassword: str = Field(min_length=1)
     newPassword: str | None = Field(default=None, min_length=8)
+
+
+class TimezoneUpdateRequest(SecureModel):
+    timezone: str = Field(min_length=1, max_length=80)
+
+    @field_validator("timezone")
+    @classmethod
+    def validateTimezone(cls, value: str) -> str:
+        normalized = value.strip()
+        try:
+            ZoneInfo(normalized)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("时区名称不受支持") from exc
+        return normalized
 
 
 class SmtpConfigInput(SecureModel):

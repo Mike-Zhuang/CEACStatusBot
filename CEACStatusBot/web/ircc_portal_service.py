@@ -14,7 +14,11 @@ from .case_service import PREMIUM_CASE_LIMIT, STANDARD_CASE_LIMIT, nextProfileSo
 from .database import getConnection, utcNowIso
 from .mailer import (
     buildEmailHtml,
+    formatCaseEmailTime,
+    formatEmailTime,
+    formatEmailTextTimes,
     getSystemSmtpConfig,
+    getUserEmailTimezone,
     recordEmailDelivery,
     sendEmail,
 )
@@ -987,6 +991,9 @@ def runIrccCaseQuery(caseId: int, triggerType: str = "ircc_automatic") -> dict[s
                 shouldNotify = previous is not None and bool(row["email_notifications_enabled"])
                 if shouldNotify:
                     try:
+                        emailTimezone = getUserEmailTimezone(int(row["user_id"]), connection)
+                        queryTime = formatEmailTime(finishedIso, emailTimezone)
+                        emailChangeSummary = formatEmailTextTimes(changeSummary, emailTimezone)
                         subject = f"[IRCC Alpha] {row['application_number'] or row['app_id']} 申请状态发生变化"
                         body = "\n".join(
                             [
@@ -997,13 +1004,13 @@ def runIrccCaseQuery(caseId: int, triggerType: str = "ircc_automatic") -> dict[s
                                 f"Application number：{row['application_number'] or '-'}",
                                 f"appId：{row['app_id']}",
                                 f"申请人：{row['principal_applicant'] or '-'}",
-                                f"查询时间：{finishedIso}",
+                                f"查询时间：{queryTime}",
                                 "",
                                 "变化摘要：",
-                                changeSummary,
+                                emailChangeSummary,
                                 "",
                                 "当前状态摘要：",
-                                summarizeSnapshot(snapshot),
+                                formatEmailTextTimes(summarizeSnapshot(snapshot), emailTimezone),
                             ],
                         )
                         sendIrccNotification(case, smtpConfig, subject, body, connection)
@@ -1326,6 +1333,7 @@ def sendCurrentIrccEmail(caseId: int, userId: int | None = None) -> dict[str, An
     case = dict(row)
     case["receive_email"] = decryptIfNeeded(case["receive_email"]) or ""
     snapshot = json.loads(decryptIfNeeded(latest["raw_payload"]) or "{}")
+    emailTimezone = getUserEmailTimezone(int(case["user_id"]))
     body = "\n".join(
         [
             "这是一封 IRCC Portal Alpha 测试邮件。",
@@ -1334,13 +1342,13 @@ def sendCurrentIrccEmail(caseId: int, userId: int | None = None) -> dict[str, An
             f"Application number：{case['application_number'] or '-'}",
             f"appId：{case['app_id']}",
             f"申请人：{case['principal_applicant'] or '-'}",
-            f"快照时间：{latest['fetched_at']}",
+            f"快照时间：{formatCaseEmailTime(case, latest['fetched_at'])}",
             "",
             "最近变化摘要：",
-            latest["change_summary"],
+            formatEmailTextTimes(latest["change_summary"], emailTimezone),
             "",
             "当前状态摘要：",
-            summarizeSnapshot(snapshot),
+            formatEmailTextTimes(summarizeSnapshot(snapshot), emailTimezone),
         ],
     )
     try:
