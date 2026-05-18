@@ -3767,51 +3767,58 @@ function AdminPanel(props: {
                     <div className="case-list compact">
                       {ownedCases.map((item) => {
                         const key = item.adminCaseKey ?? `${item.profileType ?? "ceac"}-${item.id}`;
-                        if (item.profileType === "ircc") {
-                          return (
-                            <div key={key} className="admin-case-row admin-ircc-case-row">
-                              <span>{item.displayName}</span>
-                              <span className="status-badge success">{props.t("countryCanada")}</span>
-                              <span className="mono-text">{item.applicationNum}</span>
-                              <span className="admin-ircc-summary">{item.lastStatus ?? props.t("waitFirstQuery")}</span>
-                              <span className="mono-text">{formatTime(item.lastCheckedAt, props.languageMode)}</span>
-                            </div>
-                          );
-                        }
+                        const isIrcc = item.profileType === "ircc";
+                        const countryLabel = isIrcc ? props.t("countryCanada") : props.t("countryUnitedStates");
+                        const statusSummary = item.lastStatus ?? props.t("waitFirstQuery");
                         return (
-                          <div key={key} className="admin-case-row">
-                            <span>{item.displayName}</span>
-                            <span className="status-badge">{props.t("countryUnitedStates")}</span>
-                            <span className="mono-text">{item.applicationNum}</span>
-                            <span className={getStatusBadgeClass(item.lastStatus)}>
-                              {item.lastStatus ?? props.t("waitFirstQuery")}
-                            </span>
-                            {item.passportSlotMonitor && (
-                              <>
-                                <span className={`status-badge ${item.passportSlotMonitor.isEnabled ? "success" : ""}`}>
-                                  {formatPassportSlotStatus(item.passportSlotMonitor.lastResult, props.t)}
-                                </span>
-                                <span className="mono-text">
-                                  {props.t("passportSlotLastCount")}: {item.passportSlotMonitor.lastSlotCount}
-                                </span>
-                                <span className="mono-text">
-                                  {props.t("nextCheckAt")}: {formatTime(item.passportSlotMonitor.nextCheckAt, props.languageMode)}
-                                </span>
-                                {item.passportSlotMonitor.lastErrorMessage && (
-                                  <span className="status-badge error">{item.passportSlotMonitor.lastErrorMessage}</span>
-                                )}
-                              </>
-                            )}
-                            {item.ceacAutoLockedByPassportSlot && (
-                              <button
-                                type="button"
-                                className="button secondary compact-button"
-                                disabled={props.isBusy}
-                                onClick={() => props.restoreCeacAutoQuery(item.id)}
-                              >
-                                {props.t("restoreCeacAutoQuery")}
-                              </button>
-                            )}
+                          <div key={key} className="admin-profile-card">
+                            <div className="admin-profile-main">
+                              <span className="admin-profile-title">{item.displayName}</span>
+                              <div className="admin-profile-meta">
+                                <span className={`admin-country-badge ${isIrcc ? "canada" : ""}`}>{countryLabel}</span>
+                                <span className="mono-text">{item.applicationNum}</span>
+                              </div>
+                            </div>
+                            <div className="admin-profile-status">
+                              {isIrcc ? (
+                                <span className="admin-ircc-summary" title={statusSummary}>{statusSummary}</span>
+                              ) : (
+                                <>
+                                  <div className="admin-profile-status-line">
+                                    <span className={getStatusBadgeClass(item.lastStatus)}>
+                                      {statusSummary}
+                                    </span>
+                                    {item.passportSlotMonitor && (
+                                      <span className="admin-inline-meta">
+                                        GTS: {formatPassportSlotStatus(item.passportSlotMonitor.lastResult, props.t)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {item.passportSlotMonitor && (
+                                    <div className="admin-profile-subline">
+                                      <span>slot {item.passportSlotMonitor.lastSlotCount}</span>
+                                      <span>{props.t("nextCheckAt")}: {formatTime(item.passportSlotMonitor.nextCheckAt, props.languageMode)}</span>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            <div className="admin-profile-side">
+                              <span className="mono-text">{formatTime(item.lastCheckedAt, props.languageMode)}</span>
+                              {!isIrcc && item.passportSlotMonitor?.lastErrorMessage && (
+                                <span className="status-badge error">{item.passportSlotMonitor.lastErrorMessage}</span>
+                              )}
+                              {!isIrcc && item.ceacAutoLockedByPassportSlot && (
+                                <button
+                                  type="button"
+                                  className="button secondary compact-button"
+                                  disabled={props.isBusy}
+                                  onClick={() => props.restoreCeacAutoQuery(item.id)}
+                                >
+                                  {props.t("restoreCeacAutoQuery")}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
