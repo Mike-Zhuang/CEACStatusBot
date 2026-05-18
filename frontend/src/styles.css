@@ -1196,15 +1196,11 @@ select:focus {
   min-height: 26px;
   padding: 0 8px;
   border-radius: 999px;
-  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  background: var(--canvas);
   color: var(--ink-muted);
   font-weight: 600;
   white-space: nowrap;
-}
-
-.admin-country-badge.canada {
-  background: color-mix(in srgb, var(--success) 12%, var(--surface-2));
-  color: var(--success);
 }
 
 .admin-profile-status {
@@ -1220,6 +1216,25 @@ select:focus {
   line-height: 1.4;
 }
 
+.admin-status-chip {
+  display: inline-grid;
+  place-items: center;
+  min-width: 72px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.admin-status-chip.ircc {
+  background: color-mix(in srgb, var(--success) 12%, var(--surface-2));
+  color: var(--success);
+}
+
 .admin-ircc-summary {
   color: var(--ink-muted);
   font-size: 13px;
@@ -1227,6 +1242,13 @@ select:focus {
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.admin-ircc-subline {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

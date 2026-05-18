@@ -3770,18 +3770,31 @@ function AdminPanel(props: {
                         const isIrcc = item.profileType === "ircc";
                         const countryLabel = isIrcc ? props.t("countryCanada") : props.t("countryUnitedStates");
                         const statusSummary = item.lastStatus ?? props.t("waitFirstQuery");
+                        const irccSummaryParts = statusSummary.split(" · ").filter(Boolean);
+                        const irccPrimarySummary = irccSummaryParts[0] ?? statusSummary;
+                        const irccSecondarySummary = irccSummaryParts.slice(1).join(" · ");
                         return (
                           <div key={key} className="admin-profile-card">
                             <div className="admin-profile-main">
                               <span className="admin-profile-title">{item.displayName}</span>
                               <div className="admin-profile-meta">
-                                <span className={`admin-country-badge ${isIrcc ? "canada" : ""}`}>{countryLabel}</span>
+                                <span className="admin-country-badge">{countryLabel}</span>
                                 <span className="mono-text">{item.applicationNum}</span>
                               </div>
                             </div>
                             <div className="admin-profile-status">
                               {isIrcc ? (
-                                <span className="admin-ircc-summary" title={statusSummary}>{statusSummary}</span>
+                                <>
+                                  <div className="admin-profile-status-line">
+                                    <span className="admin-status-chip ircc">IRCC</span>
+                                    <span className="admin-ircc-summary" title={statusSummary}>{irccPrimarySummary}</span>
+                                  </div>
+                                  {irccSecondarySummary && (
+                                    <div className="admin-profile-subline admin-ircc-subline" title={irccSecondarySummary}>
+                                      {irccSecondarySummary}
+                                    </div>
+                                  )}
+                                </>
                               ) : (
                                 <>
                                   <div className="admin-profile-status-line">
