@@ -334,6 +334,17 @@ def summarizeSnapshot(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def summarizeSnapshotBrief(snapshot: dict[str, Any]) -> str:
+    normalized = normalizeSnapshot(snapshot)
+    parts = [
+        f"总状态：{formatIrccValue(normalized.get('applicationStatus'))}",
+        f"首页状态：{formatIrccValue(normalized.get('applicationInfoStatus'))}",
+        f"指纹/生物信息：{formatIrccValue(normalized.get('biometricInformation'))}",
+        f"消息：{len(normalized.get('messages') or [])} 条",
+    ]
+    return " · ".join(parts)
+
+
 def buildChangeSummary(previous: dict[str, Any] | None, current: dict[str, Any]) -> str:
     if not previous:
         return "首次记录 IRCC Portal 快照。"
@@ -672,6 +683,7 @@ def normalizeIrccCaseRow(row: dict[str, Any]) -> dict[str, Any]:
     email = decryptIfNeeded(row.get("portal_email_encrypted")) or ""
     rawPayload = decryptIfNeeded(row.get("latest_raw_payload") or "") or ""
     latestSnapshot = json.loads(rawPayload) if rawPayload else None
+    lastSummary = summarizeSnapshotBrief(latestSnapshot) if latestSnapshot else (row.get("last_summary") or "")
     return {
         "id": row["id"],
         "userId": row["user_id"],
@@ -689,7 +701,7 @@ def normalizeIrccCaseRow(row: dict[str, Any]) -> dict[str, Any]:
         "lastCheckedAt": row["last_checked_at"],
         "lastTriggerType": row.get("last_trigger_type"),
         "lastSnapshotHash": row.get("last_snapshot_hash") or "",
-        "lastSummary": row.get("last_summary") or "",
+        "lastSummary": lastSummary,
         "lastErrorMessage": row.get("last_error_message") or "",
         "latestSnapshot": latestSnapshot,
         "createdAt": row["created_at"],
@@ -1034,7 +1046,7 @@ def runIrccCaseQuery(caseId: int, triggerType: str = "ircc_automatic") -> dict[s
                     computeNextIrccCheckAt(finished) if bool(row["is_enabled"]) else None,
                     triggerType,
                     snapshotHash,
-                    summarizeSnapshot(snapshot),
+                    summarizeSnapshotBrief(snapshot),
                     finishedIso,
                     caseId,
                 ),

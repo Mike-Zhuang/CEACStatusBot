@@ -1130,9 +1130,11 @@ def adminQueryRuns(_: dict = Depends(adminDependency)) -> dict:
                     r.trigger_type,
                     r.success,
                     (
-                        SELECT h.application_status
+                        SELECT h.change_summary
                         FROM ircc_status_history h
                         WHERE h.case_id = c.id
+                          AND h.fetched_at >= r.started_at
+                          AND h.fetched_at <= r.finished_at
                         ORDER BY h.id DESC
                         LIMIT 1
                     ) AS status,

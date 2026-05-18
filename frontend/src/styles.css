@@ -968,6 +968,10 @@ select:focus {
   margin-top: 4px;
 }
 
+.ircc-ghost-note {
+  margin-top: 14px;
+}
+
 .action-notice {
   display: flex;
   align-items: center;
@@ -1153,6 +1157,17 @@ select:focus {
   border-radius: 8px;
   color: var(--ink-muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.admin-ircc-case-row {
+  grid-template-columns: minmax(140px, 1fr) auto minmax(130px, 0.7fr) minmax(220px, 2fr) minmax(120px, 0.9fr);
+}
+
+.admin-ircc-summary {
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 

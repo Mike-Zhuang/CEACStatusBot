@@ -618,6 +618,8 @@ const translations = {
     noLogs: "No logs yet",
     noStatus: "Not ready",
     noStatusChange: "No status change",
+    notificationSent: "Notification sent",
+    notificationNotSent: "No notification sent",
     moveProfileUp: "Move up",
     moveProfileDown: "Move down",
     profileOrderSaved: "Profile order saved.",
@@ -854,6 +856,8 @@ const translations = {
     noLogs: "暂无日志",
     noStatus: "未就绪",
     noStatusChange: "未发生状态变更",
+    notificationSent: "已发送通知",
+    notificationNotSent: "未发送通知",
     moveProfileUp: "上移档案",
     moveProfileDown: "下移档案",
     profileOrderSaved: "档案顺序已保存。",
@@ -1141,6 +1145,13 @@ function formatTime(value: string | number | null, languageMode: LanguageMode): 
     return String(value);
   }
   return parsed.toLocaleString(languageMode === "zh" ? "zh-CN" : "en-US");
+}
+
+function formatInlineTimes(value: string, languageMode: LanguageMode): string {
+  return value.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})/g, (matched) => {
+    const formatted = formatTime(matched, languageMode);
+    return formatted === matched ? matched : formatted;
+  });
 }
 
 function formatDurationSeconds(seconds: number): string {
@@ -2861,6 +2872,19 @@ function formatIrccRemainingTime(appStatus: Record<string, unknown>, languageMod
   return `${value}${unit && unit !== "-" ? ` ${unit}` : ""}`;
 }
 
+function hasIrccValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === "") {
+    return false;
+  }
+  if (typeof value === "string" && ["PBT0", "PBS0"].includes(value)) {
+    return false;
+  }
+  if (typeof value === "number" && value === 0) {
+    return false;
+  }
+  return true;
+}
+
 function formatIrccMessageTag(value: unknown, languageMode: LanguageMode): string {
   const tag = String(value ?? "");
   if (!tag) {
@@ -2905,6 +2929,12 @@ function IrccCaseDetail(props: {
   const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
   const documentStatus = Array.isArray(appStatus.documentStatus) ? appStatus.documentStatus : [];
   const applicant = getIrccApplicant(snapshot);
+  const hasProcessingTimeDetails = Boolean(appStatus.processingTimeAvailable)
+    || hasIrccValue(appStatus.processingTimeBarTitle)
+    || hasIrccValue(appStatus.processingTimeBarMessage)
+    || hasIrccValue(appStatus.estimatedCompletionDate)
+    || hasIrccValue(appStatus.estimatedRemainingProcessingTime)
+    || appStatus.processingTimeExceeded === true;
   const statusLabels = props.languageMode === "zh"
     ? {
         eligibility: "资格审查",
@@ -3050,34 +3080,37 @@ function IrccCaseDetail(props: {
           <Metric label={statusLabels.finalDecision} value={readIrccStatus(appStatus.finalDecision, props.languageMode)} />
           <Metric label={statusLabels.ghostUpdate} value={applicationInfo.updatedTimestamp || applicationInfo.updatedDate ? formatTime(String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate), props.languageMode) : "-"} />
         </div>
-        <p className="form-intro compact">{props.t("irccGhostUpdate")}</p>
+        <p className="form-intro compact ircc-ghost-note">{props.t("irccGhostUpdate")}</p>
       </section>
 
-      <section className="panel">
-        <div className="panel-title">
-          <h2 className="subhead">{statusLabels.processingTitle}</h2>
-          <span className="status-badge">{formatIrccBoolean(appStatus.processingTimeAvailable, props.languageMode)}</span>
-        </div>
-        <div className="two-col metric-grid ircc-metric-grid">
-          <Metric label={statusLabels.processingTitle} value={formatIrccPlainValue(appStatus.processingTimeBarTitle, props.languageMode)} />
-          <Metric label={statusLabels.processingMessage} value={formatIrccPlainValue(appStatus.processingTimeBarMessage, props.languageMode)} />
-        </div>
-        <div className="two-col metric-grid ircc-metric-grid">
-          <Metric label={statusLabels.estimatedCompletionDate} value={formatIrccPlainValue(appStatus.estimatedCompletionDate, props.languageMode)} />
-          <Metric label={statusLabels.remainingProcessingTime} value={formatIrccRemainingTime(appStatus, props.languageMode)} />
-        </div>
-        <div className="two-col metric-grid ircc-metric-grid">
-          <Metric label={statusLabels.processingTimeAvailable} value={formatIrccBoolean(appStatus.processingTimeAvailable, props.languageMode)} />
-          <Metric label={statusLabels.processingTimeExceeded} value={formatIrccBoolean(appStatus.processingTimeExceeded, props.languageMode)} />
-        </div>
-      </section>
+      {hasProcessingTimeDetails && (
+        <section className="panel">
+          <div className="panel-title">
+            <h2 className="subhead">{statusLabels.processingTitle}</h2>
+            <span className="status-badge">{formatIrccBoolean(appStatus.processingTimeAvailable, props.languageMode)}</span>
+          </div>
+          <div className="two-col metric-grid ircc-metric-grid">
+            {hasIrccValue(appStatus.processingTimeBarTitle) && <Metric label={statusLabels.processingTitle} value={formatIrccPlainValue(appStatus.processingTimeBarTitle, props.languageMode)} />}
+            {hasIrccValue(appStatus.processingTimeBarMessage) && <Metric label={statusLabels.processingMessage} value={formatIrccPlainValue(appStatus.processingTimeBarMessage, props.languageMode)} />}
+          </div>
+          <div className="two-col metric-grid ircc-metric-grid">
+            {hasIrccValue(appStatus.estimatedCompletionDate) && <Metric label={statusLabels.estimatedCompletionDate} value={formatIrccPlainValue(appStatus.estimatedCompletionDate, props.languageMode)} />}
+            {hasIrccValue(appStatus.estimatedRemainingProcessingTime) && <Metric label={statusLabels.remainingProcessingTime} value={formatIrccRemainingTime(appStatus, props.languageMode)} />}
+          </div>
+          {appStatus.processingTimeExceeded === true && (
+            <div className="two-col metric-grid ircc-metric-grid">
+              <Metric label={statusLabels.processingTimeExceeded} value={formatIrccBoolean(appStatus.processingTimeExceeded, props.languageMode)} />
+            </div>
+          )}
+        </section>
+      )}
 
-      <section className="panel">
-        <div className="panel-title">
-          <h2 className="subhead">{statusLabels.documentStatus}</h2>
-          <span className="status-badge">{documentStatus.length}</span>
-        </div>
-        {documentStatus.length > 0 ? (
+      {documentStatus.length > 0 && (
+        <section className="panel">
+          <div className="panel-title">
+            <h2 className="subhead">{statusLabels.documentStatus}</h2>
+            <span className="status-badge">{documentStatus.length}</span>
+          </div>
           <div className="timeline">
             {documentStatus.map((item, index) => (
               <div key={index} className="timeline-item">
@@ -3085,10 +3118,8 @@ function IrccCaseDetail(props: {
               </div>
             ))}
           </div>
-        ) : (
-          <p className="empty-state compact">{props.languageMode === "zh" ? "暂无文件状态记录" : "No document status records"}</p>
-        )}
-      </section>
+        </section>
+      )}
 
       <section className="panel">
         <div className="panel-title">
@@ -3124,9 +3155,9 @@ function IrccCaseDetail(props: {
             <div key={record.id} className="timeline-item">
               <div className="timeline-header">
                 <span className="timeline-time">{formatTime(record.fetchedAt, props.languageMode)}</span>
-                <span className="status-badge">{record.notificationSent ? props.t("emailPushOn") : props.t("noStatusChange")}</span>
+                <span className={`status-badge ${record.notificationSent ? "success" : ""}`}>{record.notificationSent ? props.t("notificationSent") : props.t("notificationNotSent")}</span>
               </div>
-              <div className="timeline-desc">{record.changeSummary}</div>
+              <div className="timeline-desc">{formatInlineTimes(record.changeSummary, props.languageMode)}</div>
             </div>
           ))}
           {props.history.length === 0 && <p className="empty-state">{props.t("irccNoHistory")}</p>}
@@ -3410,7 +3441,7 @@ function PassportSlotMonitorPanel(props: {
               <div key={item.id} className="mini-history-row">
                 <span>{formatTime(item.fetchedAt, props.languageMode)}</span>
                 <span>{formatPassportSlotStatus(item.rawPayload as PassportSlotMonitor["lastResult"], props.t)} / {item.slotCount} slot</span>
-                <span>{item.notificationSent ? props.t("emailPushOn") : props.t("noStatusChange")}</span>
+                <span>{item.notificationSent ? props.t("notificationSent") : props.t("notificationNotSent")}</span>
               </div>
             ))}
             {props.history.length === 0 && <p className="empty-state compact">{props.t("noPassportSlotHistory")}</p>}
@@ -3734,44 +3765,56 @@ function AdminPanel(props: {
                       <Metric label={props.t("updatedAt")} value={formatTime(adminUser.updated_at, props.languageMode)} />
                     </div>
                     <div className="case-list compact">
-                      {ownedCases.map((item) => (
-                        <div key={item.adminCaseKey ?? `${item.profileType ?? "ceac"}-${item.id}`} className="admin-case-row">
-                          <span>{item.displayName}</span>
-                          <span className={`status-badge ${item.profileType === "ircc" ? "success" : ""}`}>
-                            {item.profileType === "ircc" ? props.t("countryCanada") : props.t("countryUnitedStates")}
-                          </span>
-                          <span className="mono-text">{item.applicationNum}</span>
-                          <span className={item.profileType === "ircc" ? "case-meta" : getStatusBadgeClass(item.lastStatus)}>
-                            {item.lastStatus ?? props.t("waitFirstQuery")}
-                          </span>
-                          {item.passportSlotMonitor && (
-                            <>
-                              <span className={`status-badge ${item.passportSlotMonitor.isEnabled ? "success" : ""}`}>
-                                {formatPassportSlotStatus(item.passportSlotMonitor.lastResult, props.t)}
-                              </span>
-                              <span className="mono-text">
-                                {props.t("passportSlotLastCount")}: {item.passportSlotMonitor.lastSlotCount}
-                              </span>
-                              <span className="mono-text">
-                                {props.t("nextCheckAt")}: {formatTime(item.passportSlotMonitor.nextCheckAt, props.languageMode)}
-                              </span>
-                              {item.passportSlotMonitor.lastErrorMessage && (
-                                <span className="status-badge error">{item.passportSlotMonitor.lastErrorMessage}</span>
-                              )}
-                            </>
-                          )}
-                          {item.profileType !== "ircc" && item.ceacAutoLockedByPassportSlot && (
-                            <button
-                              type="button"
-                              className="button secondary compact-button"
-                              disabled={props.isBusy}
-                              onClick={() => props.restoreCeacAutoQuery(item.id)}
-                            >
-                              {props.t("restoreCeacAutoQuery")}
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                      {ownedCases.map((item) => {
+                        const key = item.adminCaseKey ?? `${item.profileType ?? "ceac"}-${item.id}`;
+                        if (item.profileType === "ircc") {
+                          return (
+                            <div key={key} className="admin-case-row admin-ircc-case-row">
+                              <span>{item.displayName}</span>
+                              <span className="status-badge success">{props.t("countryCanada")}</span>
+                              <span className="mono-text">{item.applicationNum}</span>
+                              <span className="admin-ircc-summary">{item.lastStatus ?? props.t("waitFirstQuery")}</span>
+                              <span className="mono-text">{formatTime(item.lastCheckedAt, props.languageMode)}</span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={key} className="admin-case-row">
+                            <span>{item.displayName}</span>
+                            <span className="status-badge">{props.t("countryUnitedStates")}</span>
+                            <span className="mono-text">{item.applicationNum}</span>
+                            <span className={getStatusBadgeClass(item.lastStatus)}>
+                              {item.lastStatus ?? props.t("waitFirstQuery")}
+                            </span>
+                            {item.passportSlotMonitor && (
+                              <>
+                                <span className={`status-badge ${item.passportSlotMonitor.isEnabled ? "success" : ""}`}>
+                                  {formatPassportSlotStatus(item.passportSlotMonitor.lastResult, props.t)}
+                                </span>
+                                <span className="mono-text">
+                                  {props.t("passportSlotLastCount")}: {item.passportSlotMonitor.lastSlotCount}
+                                </span>
+                                <span className="mono-text">
+                                  {props.t("nextCheckAt")}: {formatTime(item.passportSlotMonitor.nextCheckAt, props.languageMode)}
+                                </span>
+                                {item.passportSlotMonitor.lastErrorMessage && (
+                                  <span className="status-badge error">{item.passportSlotMonitor.lastErrorMessage}</span>
+                                )}
+                              </>
+                            )}
+                            {item.ceacAutoLockedByPassportSlot && (
+                              <button
+                                type="button"
+                                className="button secondary compact-button"
+                                disabled={props.isBusy}
+                                onClick={() => props.restoreCeacAutoQuery(item.id)}
+                              >
+                                {props.t("restoreCeacAutoQuery")}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                       {ownedCases.length === 0 && <p className="empty-state compact">{props.t("noCases")}</p>}
                     </div>
                   </>
@@ -3958,7 +4001,9 @@ function AdminPanel(props: {
                             </td>
                             <td className="mono-text">{run.duration_ms}ms</td>
                             <td>
-                              {run.status ? (
+                              {run.profile_type === "ircc" && run.status ? (
+                                <span className="admin-ircc-summary">{formatInlineTimes(run.status, props.languageMode)}</span>
+                              ) : run.status ? (
                                 <span className={getStatusBadgeClass(run.status)}>{run.status}</span>
                               ) : (
                                 run.error_message || props.t("noStatusChange")
@@ -3984,7 +4029,9 @@ function AdminPanel(props: {
                             <Metric label={props.t("lastCheckMode")} value={formatTriggerType(run.trigger_type, props.t)} />
                             <Metric label={props.t("duration")} value={`${run.duration_ms}ms`} />
                             <Metric label={props.t("changeContent")}>
-                              {run.status ? (
+                              {run.profile_type === "ircc" && run.status ? (
+                                <span className="admin-ircc-summary">{formatInlineTimes(run.status, props.languageMode)}</span>
+                              ) : run.status ? (
                                 <span className={getStatusBadgeClass(run.status, "metric-status")}>{run.status}</span>
                               ) : (
                                 run.error_message || props.t("noStatusChange")
