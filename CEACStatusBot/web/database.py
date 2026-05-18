@@ -330,6 +330,7 @@ def initializeDatabase() -> None:
                 email_type TEXT NOT NULL DEFAULT 'case',
                 recipient TEXT NOT NULL DEFAULT '',
                 subject TEXT NOT NULL DEFAULT '',
+                body_encrypted TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (case_id) REFERENCES ceac_cases(id) ON DELETE SET NULL
@@ -425,6 +426,14 @@ def initializeDatabase() -> None:
         if "sort_order" not in irccColumns:
             connection.execute(
                 "ALTER TABLE ircc_cases ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            )
+        emailDeliveryLogColumns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(email_delivery_logs)").fetchall()
+        }
+        if "body_encrypted" not in emailDeliveryLogColumns:
+            connection.execute(
+                "ALTER TABLE email_delivery_logs ADD COLUMN body_encrypted TEXT NOT NULL DEFAULT ''",
             )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_ceac_cases_user_sort ON ceac_cases(user_id, sort_order, updated_at)",

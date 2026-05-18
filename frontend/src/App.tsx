@@ -321,6 +321,19 @@ interface SecurityEvent {
   created_at: string;
 }
 
+interface EmailDeliveryLog {
+  id: number;
+  user_id: number;
+  user_email: string;
+  case_id: number | null;
+  display_name: string;
+  email_type: string;
+  recipient: string;
+  subject: string;
+  body: string;
+  created_at: string;
+}
+
 interface SystemEmailConfig {
   fromEmail: string;
   host: string;
@@ -587,6 +600,12 @@ const translations = {
     dashboard: "My Profiles",
     deliveryEmail: "Notification email",
     deliverySection: "Email delivery",
+    emailDeliveryLogs: "Email delivery logs",
+    emailDeliveryEmptyBody: "Body was not recorded for this earlier email.",
+    emailType: "Email type",
+    recipient: "Recipient",
+    subject: "Subject",
+    body: "Body",
     duration: "Duration",
     email: "Email",
     emailPushOff: "Email updates off",
@@ -825,6 +844,12 @@ const translations = {
     dashboard: "我的档案",
     deliveryEmail: "接收提醒邮箱",
     deliverySection: "邮件发送",
+    emailDeliveryLogs: "发信记录",
+    emailDeliveryEmptyBody: "这封较早的邮件未记录正文。",
+    emailType: "邮件类型",
+    recipient: "收件人",
+    subject: "主题",
+    body: "正文",
     duration: "耗时",
     email: "邮箱",
     emailPushOff: "邮件推送关闭",
@@ -1246,6 +1271,7 @@ export function App() {
   const [scheduledQueryJobs, setScheduledQueryJobs] = useState<AdminScheduledQueryJob[]>([]);
   const [finishedQueryJobs, setFinishedQueryJobs] = useState<AdminFinishedQueryJob[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
+  const [emailDeliveryLogs, setEmailDeliveryLogs] = useState<EmailDeliveryLog[]>([]);
   const [systemEmailConfig, setSystemEmailConfig] = useState<SystemEmailConfig | null>(null);
   const [systemEmailForm, setSystemEmailForm] = useState<SystemEmailForm>({
     fromEmail: "",
@@ -1439,13 +1465,14 @@ export function App() {
   }
 
   async function loadAdminData() {
-    const [runsPayload, jobsPayload, casesPayload, usersPayload, systemEmailPayload, securityEventsPayload] = await Promise.all([
+    const [runsPayload, jobsPayload, casesPayload, usersPayload, systemEmailPayload, securityEventsPayload, emailDeliveryPayload] = await Promise.all([
       requestJson<{ runs: QueryRun[] }>("/api/admin/query-runs"),
       requestJson<{ jobs: AdminQueryJob[]; scheduledJobs: AdminScheduledQueryJob[]; finishedJobs: AdminFinishedQueryJob[] }>("/api/admin/query-jobs"),
       requestJson<{ cases: AdminCase[] }>("/api/admin/cases"),
       requestJson<{ users: AdminUser[] }>("/api/admin/users"),
       requestJson<{ config: SystemEmailConfig }>("/api/admin/system-email"),
       requestJson<{ events: SecurityEvent[] }>("/api/admin/security-events?limit=200"),
+      requestJson<{ deliveries: EmailDeliveryLog[] }>("/api/admin/email-deliveries?limit=200"),
     ]);
     setQueryRuns(runsPayload.runs);
     setQueryJobs(jobsPayload.jobs);
@@ -1454,6 +1481,7 @@ export function App() {
     setAdminCases(casesPayload.cases);
     setAdminUsers(usersPayload.users);
     setSecurityEvents(securityEventsPayload.events);
+    setEmailDeliveryLogs(emailDeliveryPayload.deliveries);
     setSystemEmailConfig(systemEmailPayload.config);
     setSystemEmailForm({
       fromEmail: systemEmailPayload.config.fromEmail,
@@ -2638,6 +2666,7 @@ export function App() {
             scheduledQueryJobs={scheduledQueryJobs}
             finishedQueryJobs={finishedQueryJobs}
             securityEvents={securityEvents}
+            emailDeliveryLogs={emailDeliveryLogs}
             cases={adminCases}
             reload={loadAdminData}
             t={t}
@@ -3551,6 +3580,7 @@ function AdminPanel(props: {
   scheduledQueryJobs: AdminScheduledQueryJob[];
   finishedQueryJobs: AdminFinishedQueryJob[];
   securityEvents: SecurityEvent[];
+  emailDeliveryLogs: EmailDeliveryLog[];
   cases: AdminCase[];
   reload: () => Promise<void>;
   t: (key: TranslationKey) => string;
@@ -3569,6 +3599,7 @@ function AdminPanel(props: {
   const [collapsedAdminUsers, setCollapsedAdminUsers] = useState<Record<number, boolean>>({});
   const [collapsedLogUsers, setCollapsedLogUsers] = useState<Record<string, boolean>>({});
   const [collapsedSecurityActors, setCollapsedSecurityActors] = useState<Record<string, boolean>>({});
+  const [collapsedEmailRecipients, setCollapsedEmailRecipients] = useState<Record<string, boolean>>({});
   const [isFinishedQueueCollapsed, setIsFinishedQueueCollapsed] = useState(true);
   const [queueClockMs, setQueueClockMs] = useState(Date.now());
   useEffect(() => {
@@ -3602,6 +3633,14 @@ function AdminPanel(props: {
       .map(([key, value]) => ({ key, label: value.label, events: value.events }))
       .sort((groupA, groupB) => groupA.label.localeCompare(groupB.label));
   }, [props.securityEvents, props.t]);
+  const emailDeliveriesByRecipient = useMemo(() => {
+    const grouped = new Map<string, EmailDeliveryLog[]>();
+    for (const delivery of props.emailDeliveryLogs) {
+      const recipient = delivery.recipient || props.t("triggerUnknown");
+      grouped.set(recipient, [...(grouped.get(recipient) ?? []), delivery]);
+    }
+    return Array.from(grouped.entries()).sort(([recipientA], [recipientB]) => recipientA.localeCompare(recipientB));
+  }, [props.emailDeliveryLogs, props.t]);
   const toggleLogUser = (email: string) => {
     setCollapsedLogUsers((current) => ({ ...current, [email]: !current[email] }));
   };
@@ -3610,6 +3649,9 @@ function AdminPanel(props: {
   };
   const toggleSecurityActor = (actor: string) => {
     setCollapsedSecurityActors((current) => ({ ...current, [actor]: !(current[actor] ?? true) }));
+  };
+  const toggleEmailRecipient = (recipient: string) => {
+    setCollapsedEmailRecipients((current) => ({ ...current, [recipient]: !(current[recipient] ?? true) }));
   };
   const toggleFinishedQueue = () => {
     setIsFinishedQueueCollapsed((current) => !current);
@@ -4067,6 +4109,53 @@ function AdminPanel(props: {
             );
           })}
           {props.queryRuns.length === 0 && <p className="empty-state">{props.t("noLogs")}</p>}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <h2 className="headline">{props.t("emailDeliveryLogs")}</h2>
+          <button className="button secondary" onClick={props.reload}>{props.t("refresh")}</button>
+        </div>
+        <div className="log-groups">
+          {emailDeliveriesByRecipient.map(([recipient, deliveries]) => {
+            const isCollapsed = collapsedEmailRecipients[recipient] ?? true;
+            return (
+              <section key={recipient} className={`log-group ${isCollapsed ? "collapsed" : ""}`}>
+                <button type="button" className="log-group-header" onClick={() => toggleEmailRecipient(recipient)}>
+                  <span className="log-group-title">
+                    {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                    <span>{recipient}</span>
+                  </span>
+                  <span className="status-badge">{deliveries.length} {props.t("logItems")}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="log-card-list visible">
+                    {deliveries.map((delivery) => (
+                      <div key={delivery.id} className="log-card">
+                        <div className="log-card-header">
+                          <span>{formatTime(delivery.created_at, props.languageMode)}</span>
+                          <span className="status-badge">{delivery.email_type}</span>
+                        </div>
+                        <div className="log-card-grid">
+                          <Metric label={props.t("recipient")} value={delivery.recipient} />
+                          <Metric label={props.t("executor")} value={delivery.user_email} />
+                          <Metric label={props.t("profile")} value={delivery.display_name || "-"} />
+                          <Metric label={props.t("emailType")} value={delivery.email_type} />
+                          <Metric label={props.t("subject")} value={delivery.subject} />
+                        </div>
+                        <div className="email-body-preview">
+                          <span className="caption">{props.t("body")}</span>
+                          <pre>{delivery.body || props.t("emailDeliveryEmptyBody")}</pre>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+          {props.emailDeliveryLogs.length === 0 && <p className="empty-state">{props.t("noLogs")}</p>}
         </div>
       </section>
 

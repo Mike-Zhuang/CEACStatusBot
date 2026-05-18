@@ -314,26 +314,28 @@ def recordEmailDelivery(
     emailType: str,
     recipient: str,
     subject: str,
+    body: str = "",
     connection: Any | None = None,
 ) -> None:
     if userId is None:
         return
+    bodyEncrypted = encryptSecret(body) if body else ""
     if connection is not None:
         connection.execute(
             """
-            INSERT INTO email_delivery_logs (user_id, case_id, email_type, recipient, subject, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO email_delivery_logs (user_id, case_id, email_type, recipient, subject, body_encrypted, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (userId, caseId, emailType, recipient, subject, utcNowIso()),
+            (userId, caseId, emailType, recipient, subject, bodyEncrypted, utcNowIso()),
         )
         return
     with getConnection() as localConnection:
         localConnection.execute(
             """
-            INSERT INTO email_delivery_logs (user_id, case_id, email_type, recipient, subject, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO email_delivery_logs (user_id, case_id, email_type, recipient, subject, body_encrypted, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (userId, caseId, emailType, recipient, subject, utcNowIso()),
+            (userId, caseId, emailType, recipient, subject, bodyEncrypted, utcNowIso()),
         )
 
 
@@ -661,7 +663,7 @@ def sendCaseEmail(
             htmlBody=htmlBody,
             inlineImages=inlineImages,
         )
-        recordEmailDelivery(userId=userId, caseId=caseId, emailType=emailType, recipient=case["receive_email"], subject=subject, connection=connection)
+        recordEmailDelivery(userId=userId, caseId=caseId, emailType=emailType, recipient=case["receive_email"], subject=subject, body=plainBody, connection=connection)
         return
     sendSystemEmail(case["receive_email"], subject, plainBody, htmlBody=htmlBody, inlineImages=inlineImages)
-    recordEmailDelivery(userId=userId, caseId=caseId, emailType=emailType, recipient=case["receive_email"], subject=subject, connection=connection)
+    recordEmailDelivery(userId=userId, caseId=caseId, emailType=emailType, recipient=case["receive_email"], subject=subject, body=plainBody, connection=connection)

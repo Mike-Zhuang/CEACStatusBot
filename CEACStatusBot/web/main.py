@@ -1361,6 +1361,39 @@ def adminSystemEmail(_: dict = Depends(adminDependency)) -> dict:
     return {"config": getSystemSmtpConfigPublic()}
 
 
+@app.get("/api/admin/email-deliveries")
+def adminEmailDeliveries(limit: int = 200, _: dict = Depends(adminDependency)) -> dict:
+    safeLimit = min(max(limit, 1), 500)
+    with getConnection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                l.id,
+                l.user_id,
+                u.email AS user_email,
+                l.case_id,
+                COALESCE(c.display_name, '') AS display_name,
+                l.email_type,
+                l.recipient,
+                l.subject,
+                l.body_encrypted,
+                l.created_at
+            FROM email_delivery_logs l
+            JOIN users u ON u.id = l.user_id
+            LEFT JOIN ceac_cases c ON c.id = l.case_id
+            ORDER BY l.created_at DESC, l.id DESC
+            LIMIT ?
+            """,
+            (safeLimit,),
+        ).fetchall()
+    deliveries = []
+    for row in rows:
+        item = dict(row)
+        item["body"] = decryptIfNeeded(item.pop("body_encrypted") or "") or ""
+        deliveries.append(item)
+    return {"deliveries": deliveries}
+
+
 @app.put("/api/admin/system-email")
 def adminSaveSystemEmail(payload: SystemSmtpConfigInput, _: dict = Depends(adminDependency)) -> dict:
     try:

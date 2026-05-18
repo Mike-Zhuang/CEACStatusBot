@@ -921,6 +921,7 @@ def sendIrccNotification(case: dict[str, Any], smtpConfig: dict[str, Any] | None
         emailType="ircc_status",
         recipient=case["receive_email"],
         subject=subject,
+        body=body,
         connection=connection,
     )
 

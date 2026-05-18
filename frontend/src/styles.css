@@ -1435,6 +1435,55 @@ select:focus {
   padding: 12px;
 }
 
+.log-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  min-width: 0;
+}
+
+.log-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink-subtle);
+  font-size: 13px;
+}
+
+.log-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.email-body-preview {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.email-body-preview .caption {
+  color: var(--ink-subtle);
+}
+
+.email-body-preview pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .log-table {
   width: 100%;
   min-width: 1080px;
