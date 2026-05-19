@@ -80,6 +80,8 @@ STATUS_LABELS = {
     "messages": "申请消息",
 }
 
+IRCC_GHOST_UPDATE_KEYS = {"updatedDate", "homeUpdatedDate"}
+
 # 这些 code/key 来自 IRCC Portal 当前前端 bundle（用户提供 HAR 中的 main-es2015）。
 # IRCC 未承诺它们是公开稳定 API；未知 code 仍会保留原始值显示。
 STATUS_CODE_MAP = {
@@ -349,11 +351,68 @@ def summarizeSnapshotBrief(snapshot: dict[str, Any]) -> str:
     return " · ".join(parts)
 
 
+def getChangedSnapshotKeys(previous: dict[str, Any] | None, current: dict[str, Any]) -> list[str]:
+    if not previous:
+        return []
+    previousNormalized = normalizeSnapshot(previous)
+    currentNormalized = normalizeSnapshot(current)
+    return [
+        key
+        for key in STATUS_LABELS
+        if stableHash(previousNormalized.get(key)) != stableHash(currentNormalized.get(key))
+    ]
+
+
+def classifyIrccChange(previous: dict[str, Any] | None, current: dict[str, Any]) -> str:
+    changedKeys = getChangedSnapshotKeys(previous, current)
+    if not changedKeys:
+        return "initial" if previous is None else "ghost"
+    visibleKeys = [key for key in changedKeys if key not in IRCC_GHOST_UPDATE_KEYS]
+    if visibleKeys:
+        return "visible"
+    if changedKeys == ["updatedDate"]:
+        return "detail_ghost"
+    if changedKeys == ["homeUpdatedDate"]:
+        return "home_ghost"
+    return "ghost"
+
+
+def irccEmailSubjectAction(changeType: str) -> str:
+    if changeType == "detail_ghost":
+        return "检测到详情 Ghost update"
+    if changeType == "home_ghost":
+        return "检测到首页 Ghost update"
+    if changeType == "ghost":
+        return "检测到 Ghost update"
+    return "申请状态发生变化"
+
+
+def irccEmailIntro(changeType: str) -> str:
+    if changeType == "detail_ghost":
+        return "IRCC Portal Alpha 监控检测到详情 Ghost update：详情更新时间变化，但七项状态、申请消息和申请人信息暂无可见变化。"
+    if changeType == "home_ghost":
+        return "IRCC Portal Alpha 监控检测到首页 Ghost update：首页 submitted applications 更新时间变化，但详情页暂无可见变化。"
+    if changeType == "ghost":
+        return "IRCC Portal Alpha 监控检测到 Ghost update：后台更新时间变化，但暂无明确可见状态变化。"
+    return "IRCC Portal Alpha 监控检测到申请信息变化。"
+
+
 def buildChangeSummary(previous: dict[str, Any] | None, current: dict[str, Any]) -> str:
     if not previous:
         return "首次记录 IRCC Portal 快照。"
     previousNormalized = normalizeSnapshot(previous)
     currentNormalized = normalizeSnapshot(current)
+    changedKeys = getChangedSnapshotKeys(previous, current)
+    if changedKeys == ["updatedDate"]:
+        return (
+            f"详情 Ghost update：详情更新时间从 {previousNormalized.get('updatedDate') or '-'} "
+            f"变为 {currentNormalized.get('updatedDate') or '-'}；七项状态、申请消息和申请人信息暂无可见变化。"
+        )
+    if changedKeys == ["homeUpdatedDate"]:
+        return (
+            f"首页 Ghost update：首页 submitted applications 更新时间从 {previousNormalized.get('homeUpdatedDate') or '-'} "
+            f"变为 {currentNormalized.get('homeUpdatedDate') or '-'}；详情页暂无可见变化。"
+        )
     changes: list[str] = []
     for key, label in STATUS_LABELS.items():
         previousValue = previousNormalized.get(key)
@@ -361,14 +420,14 @@ def buildChangeSummary(previous: dict[str, Any] | None, current: dict[str, Any])
         if stableHash(previousValue) == stableHash(currentValue):
             continue
         if key == "homeUpdatedDate":
-            changes.append(f"Ghost update：首页更新时间从 {previousValue or '-'} 变为 {currentValue or '-'}。")
+            changes.append(f"首页 Ghost update：首页 submitted applications 更新时间从 {previousValue or '-'} 变为 {currentValue or '-'}。")
         elif key == "messages":
             previousMessages = previousValue or []
             currentMessages = currentValue or []
             changes.append(f"申请消息发生变化：{len(previousMessages)} 条 -> {len(currentMessages)} 条。")
         else:
             changes.append(f"{label} 发生变化：{formatIrccValue(previousValue)} -> {formatIrccValue(currentValue)}。")
-    return "\n".join(changes[:20]) if changes else "快照指纹变化，但未生成字段级摘要。"
+    return "\n".join(changes[:20]) if changes else "后台 Ghost update：快照发生变化，但七项状态、申请消息和申请人信息暂无可见变化。"
 
 
 def hashSha256(value: bytes | str) -> bytes:
@@ -939,6 +998,7 @@ def runIrccCaseQuery(caseId: int, triggerType: str = "ircc_automatic") -> dict[s
     errorMessage = ""
     snapshot: dict[str, Any] = {}
     changeSummary = ""
+    changeType = "unknown"
     with getConnection() as connection:
         row = connection.execute(
             """
@@ -972,6 +1032,7 @@ def runIrccCaseQuery(caseId: int, triggerType: str = "ircc_automatic") -> dict[s
         previousSnapshot = json.loads(decryptIfNeeded(previous["raw_payload"]) or "{}") if previous else None
         changed = previous is None or str(row.get("last_snapshot_hash") or "") != snapshotHash
         changeSummary = buildChangeSummary(previousSnapshot, snapshot)
+        changeType = classifyIrccChange(previousSnapshot, snapshot)
         success = True
     except IrccAuthenticationError as exc:
         errorMessage = str(exc)
@@ -994,10 +1055,10 @@ def runIrccCaseQuery(caseId: int, triggerType: str = "ircc_automatic") -> dict[s
                         emailTimezone = getUserEmailTimezone(int(row["user_id"]), connection)
                         queryTime = formatEmailTime(finishedIso, emailTimezone)
                         emailChangeSummary = formatEmailTextTimes(changeSummary, emailTimezone)
-                        subject = f"[IRCC Alpha] {row['application_number'] or row['app_id']} 申请状态发生变化"
+                        subject = f"[IRCC Alpha] {row['application_number'] or row['app_id']} {irccEmailSubjectAction(changeType)}"
                         body = "\n".join(
                             [
-                                "IRCC Portal Alpha 监控检测到申请信息变化。",
+                                irccEmailIntro(changeType),
                                 "提示：该功能仍处于 Alpha，结果依赖 IRCC Portal，可能因为官网变化而延迟或失败。",
                                 "",
                                 f"档案：{row['display_name']}",

@@ -805,7 +805,7 @@ const translations = {
     irccApplicationStatus: "Application status",
     irccApplicantInfo: "Applicant information",
     irccMessages: "Messages",
-    irccGhostUpdate: "Ghost update is tracked from the submitted applications page.",
+    irccGhostUpdate: "Home ghost update comes from the submitted applications page. If only the detail updated time changes while visible status stays the same, it is recorded as a detail ghost update.",
     irccLastError: "Latest IRCC issue",
     irccNoHistory: "No IRCC history yet",
   },
@@ -1048,7 +1048,7 @@ const translations = {
     irccApplicationStatus: "申请状态",
     irccApplicantInfo: "申请人信息",
     irccMessages: "申请消息",
-    irccGhostUpdate: "首页 submitted applications 的更新时间会用于捕捉 ghost update。",
+    irccGhostUpdate: "首页 Ghost update 来自 submitted applications 更新时间；详情更新时间单独变化且可见状态不变时，会记为详情 Ghost update。",
     irccLastError: "最近 IRCC 问题",
     irccNoHistory: "暂无 IRCC 历史记录",
   },
@@ -2916,7 +2916,11 @@ function translateIrccChangeSummary(value: string, languageMode: LanguageMode): 
   let output = translateKnownIrccStatusText(withLocalTimes)
     .replace(/首次记录 IRCC Portal 快照。/g, "First IRCC Portal snapshot recorded.")
     .replace(/快照指纹变化，但未生成字段级摘要。/g, "Snapshot fingerprint changed, but no field-level summary was generated.")
-    .replace(/Ghost update：首页更新时间从 (.*?) 变为 (.*?)。/g, "Ghost update: home updated time changed from $1 to $2.")
+    .replace(/后台 Ghost update：快照发生变化，但七项状态、申请消息和申请人信息暂无可见变化。/g, "Background ghost update: the snapshot changed, but visible status, messages, and applicant information did not change.")
+    .replace(/详情 Ghost update：详情更新时间从 (.*?) 变为 (.*?)；七项状态、申请消息和申请人信息暂无可见变化。/g, "Detail ghost update: detail updated time changed from $1 to $2; visible status, messages, and applicant information did not change.")
+    .replace(/首页 Ghost update：首页 submitted applications 更新时间从 (.*?) 变为 (.*?)；详情页暂无可见变化。/g, "Home ghost update: submitted applications updated time changed from $1 to $2; detail page did not show visible changes.")
+    .replace(/首页 Ghost update：首页 submitted applications 更新时间从 (.*?) 变为 (.*?)。/g, "Home ghost update: submitted applications updated time changed from $1 to $2.")
+    .replace(/Ghost update：首页更新时间从 (.*?) 变为 (.*?)。/g, "Home ghost update: home updated time changed from $1 to $2.")
     .replace(/申请消息发生变化：(\d+) 条 -> (\d+) 条。/g, "Application messages changed: $1 -> $2 message(s).");
 
   for (const [zhLabel, enLabel] of Object.entries(irccChangeLabelMap).sort((a, b) => b[0].length - a[0].length)) {
@@ -3065,7 +3069,9 @@ function IrccCaseDetail(props: {
         biometrics: "指纹/生物信息",
         backgroundCheck: "背景调查",
         finalDecision: "最终决定",
-        ghostUpdate: "Ghost update",
+        homeStatus: "首页申请状态",
+        detailUpdatedTime: "详情更新时间",
+        homeGhostUpdate: "首页 Ghost update",
         principalApplicant: "主申请人",
         applicationNumber: "Application number",
         dateReceived: "接收日期",
@@ -3087,7 +3093,9 @@ function IrccCaseDetail(props: {
         biometrics: "Biometrics",
         backgroundCheck: "Background check",
         finalDecision: "Final decision",
-        ghostUpdate: "Ghost update",
+        homeStatus: "Home page status",
+        detailUpdatedTime: "Detail updated time",
+        homeGhostUpdate: "Home ghost update",
         principalApplicant: "Principal applicant",
         applicationNumber: "Application number",
         dateReceived: "Date received",
@@ -3199,7 +3207,11 @@ function IrccCaseDetail(props: {
         </div>
         <div className="two-col metric-grid ircc-metric-grid">
           <Metric label={statusLabels.finalDecision} value={readIrccStatus(appStatus.finalDecision, props.languageMode)} />
-          <Metric label={statusLabels.ghostUpdate} value={applicationInfo.updatedTimestamp || applicationInfo.updatedDate ? formatTime(String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate), props.languageMode) : "-"} />
+          <Metric label={statusLabels.homeStatus} value={formatIrccPlainValue(applicationInfo.appStatus, props.languageMode)} />
+        </div>
+        <div className="two-col metric-grid ircc-metric-grid">
+          <Metric label={statusLabels.detailUpdatedTime} value={appStatus.UpdatedDate ? formatTime(String(appStatus.UpdatedDate), props.languageMode) : "-"} />
+          <Metric label={statusLabels.homeGhostUpdate} value={applicationInfo.updatedTimestamp || applicationInfo.updatedDate ? formatTime(String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate), props.languageMode) : "-"} />
         </div>
         <p className="form-intro compact ircc-ghost-note">{props.t("irccGhostUpdate")}</p>
       </section>
