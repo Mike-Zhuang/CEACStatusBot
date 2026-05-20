@@ -60,7 +60,6 @@ COGNITO_G = 2
 STATUS_LABELS = {
     "applicationStatus": "总申请状态",
     "applicationInfoStatus": "首页申请状态",
-    "updatedDate": "详情更新时间",
     "homeUpdatedDate": "首页更新时间",
     "eligibility": "资格审查",
     "medical": "体检结果",
@@ -80,7 +79,7 @@ STATUS_LABELS = {
     "messages": "申请消息",
 }
 
-IRCC_GHOST_UPDATE_KEYS = {"updatedDate", "homeUpdatedDate"}
+IRCC_GHOST_UPDATE_KEYS = {"homeUpdatedDate"}
 
 # 这些 code/key 来自 IRCC Portal 当前前端 bundle（用户提供 HAR 中的 main-es2015）。
 # IRCC 未承诺它们是公开稳定 API；未知 code 仍会保留原始值显示。
@@ -291,7 +290,6 @@ def normalizeSnapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     applicationInfo = snapshot.get("applicationInfo") if isinstance(snapshot.get("applicationInfo"), dict) else {}
     return {
         "applicationStatus": appStatus.get("applicationStatus"),
-        "updatedDate": appStatus.get("UpdatedDate"),
         "applicationInfoStatus": applicationInfo.get("appStatus"),
         "homeUpdatedDate": applicationInfo.get("updatedTimestamp") or applicationInfo.get("updatedDate"),
         "eligibility": appStatus.get("eligibility"),
@@ -370,16 +368,12 @@ def classifyIrccChange(previous: dict[str, Any] | None, current: dict[str, Any])
     visibleKeys = [key for key in changedKeys if key not in IRCC_GHOST_UPDATE_KEYS]
     if visibleKeys:
         return "visible"
-    if changedKeys == ["updatedDate"]:
-        return "detail_ghost"
     if changedKeys == ["homeUpdatedDate"]:
         return "home_ghost"
     return "ghost"
 
 
 def irccEmailSubjectAction(changeType: str) -> str:
-    if changeType == "detail_ghost":
-        return "检测到详情 Ghost update"
     if changeType == "home_ghost":
         return "检测到首页 Ghost update"
     if changeType == "ghost":
@@ -388,8 +382,6 @@ def irccEmailSubjectAction(changeType: str) -> str:
 
 
 def irccEmailIntro(changeType: str) -> str:
-    if changeType == "detail_ghost":
-        return "IRCC Portal Alpha 监控检测到详情 Ghost update：详情更新时间变化，但七项状态、申请消息和申请人信息暂无可见变化。"
     if changeType == "home_ghost":
         return "IRCC Portal Alpha 监控检测到首页 Ghost update：首页 submitted applications 更新时间变化，但详情页暂无可见变化。"
     if changeType == "ghost":
@@ -403,11 +395,6 @@ def buildChangeSummary(previous: dict[str, Any] | None, current: dict[str, Any])
     previousNormalized = normalizeSnapshot(previous)
     currentNormalized = normalizeSnapshot(current)
     changedKeys = getChangedSnapshotKeys(previous, current)
-    if changedKeys == ["updatedDate"]:
-        return (
-            f"详情 Ghost update：详情更新时间从 {previousNormalized.get('updatedDate') or '-'} "
-            f"变为 {currentNormalized.get('updatedDate') or '-'}；七项状态、申请消息和申请人信息暂无可见变化。"
-        )
     if changedKeys == ["homeUpdatedDate"]:
         return (
             f"首页 Ghost update：首页 submitted applications 更新时间从 {previousNormalized.get('homeUpdatedDate') or '-'} "
@@ -1030,7 +1017,8 @@ def runIrccCaseQuery(caseId: int, triggerType: str = "ircc_automatic") -> dict[s
         snapshot = fetchIrccSnapshot(str(row["app_id"]), tokenCache)
         snapshotHash = stableHash(normalizeSnapshot(snapshot))
         previousSnapshot = json.loads(decryptIfNeeded(previous["raw_payload"]) or "{}") if previous else None
-        changed = previous is None or str(row.get("last_snapshot_hash") or "") != snapshotHash
+        previousSnapshotHash = stableHash(normalizeSnapshot(previousSnapshot)) if previousSnapshot else ""
+        changed = previous is None or previousSnapshotHash != snapshotHash
         changeSummary = buildChangeSummary(previousSnapshot, snapshot)
         changeType = classifyIrccChange(previousSnapshot, snapshot)
         success = True

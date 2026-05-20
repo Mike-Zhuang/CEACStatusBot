@@ -805,7 +805,7 @@ const translations = {
     irccApplicationStatus: "Application status",
     irccApplicantInfo: "Applicant information",
     irccMessages: "Messages",
-    irccGhostUpdate: "If the home updated time or detail updated time changes while visible status stays the same, it is recorded as a ghost update.",
+    irccGhostUpdate: "Home updated time comes from the submitted applications page. If it changes while the detail page stays the same, it is recorded as a ghost update.",
     irccLastError: "Latest IRCC issue",
     irccNoHistory: "No IRCC history yet",
   },
@@ -1048,7 +1048,7 @@ const translations = {
     irccApplicationStatus: "申请状态",
     irccApplicantInfo: "申请人信息",
     irccMessages: "申请消息",
-    irccGhostUpdate: "首页更新时间或详情更新时间单独变化、但可见状态不变时，会记录为 ghost update。",
+    irccGhostUpdate: "首页更新时间来自 submitted applications 页面；它变化但详情页可见状态不变时，会记录为 ghost update。",
     irccLastError: "最近 IRCC 问题",
     irccNoHistory: "暂无 IRCC 历史记录",
   },
@@ -3070,7 +3070,6 @@ function IrccCaseDetail(props: {
         backgroundCheck: "背景调查",
         finalDecision: "最终决定",
         homeStatus: "首页申请状态",
-        detailUpdatedTime: "详情更新时间",
         homeGhostUpdate: "首页更新时间",
         principalApplicant: "主申请人",
         applicationNumber: "Application number",
@@ -3094,7 +3093,6 @@ function IrccCaseDetail(props: {
         backgroundCheck: "Background check",
         finalDecision: "Final decision",
         homeStatus: "Home page status",
-        detailUpdatedTime: "Detail updated time",
         homeGhostUpdate: "Home updated time",
         principalApplicant: "Principal applicant",
         applicationNumber: "Application number",
@@ -3210,7 +3208,6 @@ function IrccCaseDetail(props: {
           <Metric label={statusLabels.homeStatus} value={formatIrccPlainValue(applicationInfo.appStatus, props.languageMode)} />
         </div>
         <div className="two-col metric-grid ircc-metric-grid">
-          <Metric label={statusLabels.detailUpdatedTime} value={appStatus.UpdatedDate ? formatTime(String(appStatus.UpdatedDate), props.languageMode) : "-"} />
           <Metric label={statusLabels.homeGhostUpdate} value={applicationInfo.updatedTimestamp || applicationInfo.updatedDate ? formatTime(String(applicationInfo.updatedTimestamp || applicationInfo.updatedDate), props.languageMode) : "-"} />
         </div>
         <p className="form-intro compact ircc-ghost-note">{props.t("irccGhostUpdate")}</p>
